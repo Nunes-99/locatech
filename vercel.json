@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/late-fees",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/maintenance-alerts",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/overdue-reminders",
+      "schedule": "0 9 * * *"
+    }
+  ]
+}

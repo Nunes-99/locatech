@@ -1,0 +1,182 @@
+import { NextRequest, NextResponse } from "next/server"
+import { prisma } from "@/lib/prisma"
+import { requireCompanyId } from "@/lib/session"
+import { z } from "zod"
+
+const updateCustomerSchema = z.object({
+  name: z.string().min(1).optional(),
+  document: z.string().min(11).optional(),
+  documentType: z.enum(["CPF", "CNPJ"]).optional(),
+  phone: z.string().min(10).optional(),
+  email: z.string().email().optional().nullable(),
+  address: z.string().optional().nullable(),
+  city: z.string().optional().nullable(),
+  state: z.string().optional().nullable(),
+  zipCode: z.string().optional().nullable(),
+  creditLimit: z.number().positive().optional().nullable(),
+  creditScore: z.enum(["EXCELLENT", "GOOD", "REGULAR", "BAD", "BLOCKED"]).optional(),
+  notes: z.string().optional().nullable(),
+  isBlocked: z.boolean().optional(),
+  blockReason: z.string().optional().nullable(),
+})
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const companyId = await requireCompanyId()
+    const { id } = await params
+
+    const customer = await prisma.customer.findFirst({
+      where: { id, companyId },
+      include: {
+        rentals: {
+          include: {
+            items: {
+              include: {
+                equipment: true,
+              },
+            },
+          },
+          take: 10,
+          orderBy: { createdAt: "desc" },
+        },
+      },
+    })
+
+    if (!customer) {
+      return NextResponse.json(
+        { error: "Cliente não encontrado" },
+        { status: 404 }
+      )
+    }
+
+    return NextResponse.json(customer)
+  } catch (error) {
+    console.error("Error fetching customer:", error)
+    if (error instanceof Error && error.message === "Não autorizado") {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    }
+    return NextResponse.json(
+      { error: "Erro ao buscar cliente" },
+      { status: 500 }
+    )
+  }
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const companyId = await requireCompanyId()
+    const { id } = await params
+    const body = await request.json()
+    const data = updateCustomerSchema.parse(body)
+
+    const existing = await prisma.customer.findFirst({
+      where: { id, companyId },
+    })
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: "Cliente não encontrado" },
+        { status: 404 }
+      )
+    }
+
+    // Se documento foi alterado, verificar duplicidade
+    if (data.document && data.document !== existing.document) {
+      const duplicate = await prisma.customer.findUnique({
+        where: {
+          companyId_document: {
+            companyId,
+            document: data.document,
+          },
+        },
+      })
+
+      if (duplicate) {
+        return NextResponse.json(
+          { error: "Já existe um cliente com este documento" },
+          { status: 400 }
+        )
+      }
+    }
+
+    const customer = await prisma.customer.update({
+      where: { id },
+      data,
+    })
+
+    return NextResponse.json(customer)
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: "Dados inválidos", details: error.errors },
+        { status: 400 }
+      )
+    }
+    if (error instanceof Error && error.message === "Não autorizado") {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    }
+    console.error("Error updating customer:", error)
+    return NextResponse.json(
+      { error: "Erro ao atualizar cliente" },
+      { status: 500 }
+    )
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const companyId = await requireCompanyId()
+    const { id } = await params
+
+    const existing = await prisma.customer.findFirst({
+      where: { id, companyId },
+      include: {
+        rentals: {
+          where: {
+            status: { in: ["IN_PROGRESS", "CONFIRMED", "OVERDUE"] },
+          },
+        },
+      },
+    })
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: "Cliente não encontrado" },
+        { status: 404 }
+      )
+    }
+
+    if (existing.rentals.length > 0) {
+      return NextResponse.json(
+        { error: "Cliente possui locações ativas" },
+        { status: 400 }
+      )
+    }
+
+    // Soft delete - mark as blocked
+    await prisma.customer.update({
+      where: { id },
+      data: { isBlocked: true, blockReason: "Cliente removido do sistema" },
+    })
+
+    return NextResponse.json({ message: "Cliente removido com sucesso" })
+  } catch (error) {
+    if (error instanceof Error && error.message === "Não autorizado") {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    }
+    console.error("Error deleting customer:", error)
+    return NextResponse.json(
+      { error: "Erro ao excluir cliente" },
+      { status: 500 }
+    )
+  }
+}
