@@ -18,9 +18,14 @@ const updateRentalSchema = z.object({
 /**
  * Matriz de transições de status permitidas via PUT.
  *
- * RETURNED e COMPLETED **não estão** na lista porque exigem efeitos colaterais
- * (devolver equipamento, recalcular lateFee, baixar caução). Use os endpoints
- * dedicados: POST /api/rentals/[id]/return e a sequência de webhooks.
+ * Notas importantes:
+ *   - Não há caminho pra `RETURNED` via PUT — `RETURNED` só é setado pelo
+ *     endpoint dedicado POST /api/rentals/[id]/return (que devolve
+ *     equipamento, calcula lateFee, baixa caução).
+ *   - `RETURNED → COMPLETED` via PUT é permitido como passo de fechamento
+ *     administrativo (sem side effects além de marcar finalizado).
+ *   - `COMPLETED` e `CANCELLED` são terminais.
+ *   - `CANCELLED` requer permissão extra `rental.cancel`.
  */
 const ALLOWED_STATUS_TRANSITIONS: Record<RentalStatus, RentalStatus[]> = {
   QUOTE: ["CONFIRMED", "CANCELLED"],

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireCompanyId, requirePermission } from "@/lib/session"
 import { z } from "zod"
-import { Prisma } from "@prisma/client"
+import { Prisma, EquipmentStatus } from "@prisma/client"
 
 function unauthorizedResponse(error: Error) {
   const status = (error as Error & { status?: number }).status
@@ -25,8 +25,22 @@ const updateEquipmentSchema = z.object({
   weeklyRate: z.number().positive().optional().nullable(),
   monthlyRate: z.number().positive().optional().nullable(),
   depositAmount: z.number().positive().optional().nullable(),
-  status: z.enum(["AVAILABLE", "RENTED", "MAINTENANCE", "RESERVED", "RETIRED"]).optional(),
+  status: z.enum(["AVAILABLE", "MAINTENANCE", "RETIRED"]).optional(),
 })
+
+/**
+ * Transições permitidas via PUT manual. RENTED e RESERVED são controlados
+ * pelo fluxo de locação (POST /api/rentals + return) — operador NÃO pode
+ * setar manualmente, senão quebra invariantes (equipamento "AVAILABLE" no
+ * sistema mas com rental IN_PROGRESS referenciando ele).
+ */
+const ALLOWED_EQUIPMENT_TRANSITIONS: Record<EquipmentStatus, EquipmentStatus[]> = {
+  AVAILABLE: ["MAINTENANCE", "RETIRED"],
+  MAINTENANCE: ["AVAILABLE", "RETIRED"],
+  RENTED: [], // não muda manualmente; só via flow de devolução
+  RESERVED: [], // idem
+  RETIRED: [], // terminal
+}
 
 export async function GET(
   request: NextRequest,
@@ -98,6 +112,24 @@ export async function PUT(
         { error: "Equipamento não encontrado" },
         { status: 404 }
       )
+    }
+
+    // Valida transição de status — bloqueia voltas inválidas e mudanças manuais
+    // em RENTED/RESERVED (esses são controlados pelo fluxo de locação).
+    if (data.status && data.status !== existing.status) {
+      const allowed = ALLOWED_EQUIPMENT_TRANSITIONS[existing.status] || []
+      if (!allowed.includes(data.status)) {
+        return NextResponse.json(
+          {
+            error:
+              `Transição inválida: ${existing.status} → ${data.status}. ` +
+              (existing.status === "RENTED" || existing.status === "RESERVED"
+                ? "Status RENTED/RESERVED é gerenciado pelo fluxo de locação (POST /api/rentals e POST /api/rentals/[id]/return)."
+                : `Permitidas: ${allowed.length ? allowed.join(", ") : "(nenhuma — estado final)"}.`),
+          },
+          { status: 409 }
+        )
+      }
     }
 
     // Se código foi alterado, verificar duplicidade

@@ -46,8 +46,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(maintenances)
   } catch (error) {
     console.error("Error fetching maintenances:", error)
-    if (error instanceof Error && error.message === "Nao autorizado") {
-      return NextResponse.json({ error: "Nao autorizado" }, { status: 401 })
+    if (error instanceof Error && error.message === "Não autorizado") {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
     }
     return NextResponse.json(
       { error: "Erro ao buscar manutencoes" },
@@ -71,6 +71,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Equipamento nao encontrado" },
         { status: 404 }
+      )
+    }
+
+    // Bloqueia abrir manutenção imediata em equipamento alugado — sem isso,
+    // o status do equipamento virava MAINTENANCE silenciosamente enquanto o
+    // cliente ainda tinha o equipamento em campo.
+    const isImmediateCorrective = data.type === "CORRECTIVE" && !data.scheduledDate
+    if (isImmediateCorrective && equipment.status === "RENTED") {
+      return NextResponse.json(
+        {
+          error:
+            "Equipamento está alugado. Agende a manutenção pra após a devolução ou registre a devolução primeiro.",
+        },
+        { status: 409 }
       )
     }
 
@@ -130,8 +144,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-    if (error instanceof Error && error.message === "Nao autorizado") {
-      return NextResponse.json({ error: "Nao autorizado" }, { status: 401 })
+    if (error instanceof Error && error.message === "Não autorizado") {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
     }
     console.error("Error creating maintenance:", error)
     return NextResponse.json(

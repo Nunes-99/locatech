@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireCompanyId } from "@/lib/session"
+import { MaintenanceStatus } from "@prisma/client"
 import { z } from "zod"
 
 const updateMaintenanceSchema = z.object({
@@ -13,6 +14,18 @@ const updateMaintenanceSchema = z.object({
   status: z.enum(["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED"]).optional(),
   notes: z.string().optional().nullable(),
 })
+
+/**
+ * Transições forward-only. Não permite voltar de COMPLETED pra IN_PROGRESS,
+ * etc. Sem isso, era possível "reabrir" manutenção concluída e bagunçar o
+ * status do equipamento.
+ */
+const ALLOWED_MAINTENANCE_TRANSITIONS: Record<MaintenanceStatus, MaintenanceStatus[]> = {
+  SCHEDULED: ["IN_PROGRESS", "CANCELLED"],
+  IN_PROGRESS: ["COMPLETED", "CANCELLED"],
+  COMPLETED: [],
+  CANCELLED: [],
+}
 
 export async function GET(
   request: NextRequest,
@@ -47,8 +60,8 @@ export async function GET(
     return NextResponse.json(maintenance)
   } catch (error) {
     console.error("Error fetching maintenance:", error)
-    if (error instanceof Error && error.message === "Nao autorizado") {
-      return NextResponse.json({ error: "Nao autorizado" }, { status: 401 })
+    if (error instanceof Error && error.message === "Não autorizado") {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
     }
     return NextResponse.json(
       { error: "Erro ao buscar manutencao" },
@@ -77,6 +90,20 @@ export async function PUT(
         { error: "Manutencao nao encontrada" },
         { status: 404 }
       )
+    }
+
+    // Valida transição de status — forward-only.
+    if (data.status && data.status !== existing.status) {
+      const allowed = ALLOWED_MAINTENANCE_TRANSITIONS[existing.status as MaintenanceStatus] || []
+      if (!allowed.includes(data.status as MaintenanceStatus)) {
+        return NextResponse.json(
+          {
+            error: `Transicao invalida: ${existing.status} -> ${data.status}. ` +
+              `Permitidas: ${allowed.length ? allowed.join(", ") : "(nenhuma — estado final)"}.`,
+          },
+          { status: 409 }
+        )
+      }
     }
 
     // Calcular novo custo total se laborCost ou partsCost foram alterados
@@ -136,8 +163,8 @@ export async function PUT(
         { status: 400 }
       )
     }
-    if (error instanceof Error && error.message === "Nao autorizado") {
-      return NextResponse.json({ error: "Nao autorizado" }, { status: 401 })
+    if (error instanceof Error && error.message === "Não autorizado") {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
     }
     console.error("Error updating maintenance:", error)
     return NextResponse.json(
@@ -182,8 +209,8 @@ export async function DELETE(
 
     return NextResponse.json({ message: "Manutencao excluida com sucesso" })
   } catch (error) {
-    if (error instanceof Error && error.message === "Nao autorizado") {
-      return NextResponse.json({ error: "Nao autorizado" }, { status: 401 })
+    if (error instanceof Error && error.message === "Não autorizado") {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
     }
     console.error("Error deleting maintenance:", error)
     return NextResponse.json(

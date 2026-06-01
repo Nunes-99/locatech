@@ -163,8 +163,25 @@ async function handleAuthorizedPaymentEvent(paymentId: string) {
     return
   }
 
-  // Estende de 30 dias a partir de hoje OU do planExpiresAt atual, o que for
-  // maior. Evita encurtar a janela se o webhook chegar antes do vencimento.
+  // Idempotência: MP entrega webhooks "at least once" — pode mandar o mesmo
+  // payment_id várias vezes em retries. Se o `planExpiresAt` atual ainda
+  // cobre mais de 25 dias à frente, este webhook é claramente uma duplicata
+  // (cobrança mensal aprovada só renova quando o ciclo está quase no fim).
+  // Sem essa guarda, replays estendiam o plano em +30d a cada notificação.
+  const now = Date.now()
+  const REPLAY_THRESHOLD_MS = 25 * 24 * 60 * 60 * 1000
+  if (
+    company.planExpiresAt &&
+    company.planExpiresAt.getTime() > now + REPLAY_THRESHOLD_MS
+  ) {
+    console.log(
+      `MP: pagamento ${paymentId} ignorado (plano ainda cobre >25d à frente — provável replay)`
+    )
+    return
+  }
+
+  // Estende +30 dias a partir do planExpiresAt atual OU de agora, o que for
+  // maior. Evita encurtar janela se renovação chegar antes do vencimento.
   const base =
     company.planExpiresAt && company.planExpiresAt > new Date()
       ? new Date(company.planExpiresAt)

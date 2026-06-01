@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireCompanyId } from "@/lib/session"
+import { requirePermission } from "@/lib/session"
 
 export async function GET(request: NextRequest) {
   try {
-    const companyId = await requireCompanyId()
+    // Relatórios incluem receita/locações/financeiro — não é dado pra OPERATOR comum.
+    const user = await requirePermission("report.view")
+    const companyId = user.companyId
     const { searchParams } = new URL(request.url)
     const type = searchParams.get("type") || "overview" // overview, equipment, customers, rentals
 
@@ -203,8 +205,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(overview)
   } catch (error) {
     console.error("Error fetching reports:", error)
-    if (error instanceof Error && error.message === "Nao autorizado") {
-      return NextResponse.json({ error: "Nao autorizado" }, { status: 401 })
+    if (error instanceof Error) {
+      const status = (error as Error & { status?: number }).status
+      if (error.message === "Não autorizado") {
+        return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+      }
+      if (status === 403 || error.message === "Acesso negado") {
+        return NextResponse.json({ error: "Acesso negado" }, { status: 403 })
+      }
     }
     return NextResponse.json(
       { error: "Erro ao buscar relatorios" },

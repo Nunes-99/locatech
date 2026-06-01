@@ -144,6 +144,23 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = createEquipmentSchema.parse(body)
 
+    // Plan limit — antes podia ser bypassado criando 1 a 1 via UI (a checagem
+    // existia só no import CSV).
+    const [company, currentCount] = await Promise.all([
+      prisma.company.findUnique({ where: { id: companyId }, select: { plan: true } }),
+      prisma.equipment.count({ where: { companyId } }),
+    ])
+    if (!company) {
+      return NextResponse.json({ error: "Empresa não encontrada" }, { status: 404 })
+    }
+    const { canAddEquipment, getUpgradeMessage } = await import("@/lib/plan-limits")
+    if (!canAddEquipment(company.plan, currentCount)) {
+      return NextResponse.json(
+        { error: getUpgradeMessage(company.plan, "equipment") },
+        { status: 402 }
+      )
+    }
+
     // Verificar se código já existe
     const existing = await prisma.equipment.findUnique({
       where: {

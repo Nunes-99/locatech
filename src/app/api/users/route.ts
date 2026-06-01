@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireCompanyId, getSession } from "@/lib/session"
+import { canAddUser, getUpgradeMessage } from "@/lib/plan-limits"
+import { Role } from "@/lib/permissions"
 import { z } from "zod"
 import bcrypt from "bcryptjs"
 
@@ -8,7 +10,7 @@ const createUserSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
   phone: z.string().optional(),
-  password: z.string().min(6),
+  password: z.string().min(8),
   role: z.enum(["OWNER", "ADMIN", "OPERATOR"]),
 })
 
@@ -48,13 +50,12 @@ export async function POST(request: NextRequest) {
     const companyId = await requireCompanyId()
     const session = await getSession()
 
-    // Only OWNER and ADMIN can create users
-    const currentUser = await prisma.user.findUnique({
-      where: { id: session?.user?.id },
-      select: { role: true },
-    })
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    }
 
-    if (!currentUser || !["OWNER", "ADMIN"].includes(currentUser.role)) {
+    const currentRole = session.user.role as Role
+    if (!["OWNER", "ADMIN"].includes(currentRole)) {
       return NextResponse.json(
         { error: "Sem permissão para criar usuários" },
         { status: 403 }
@@ -64,25 +65,57 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = createUserSchema.parse(body)
 
-    // Check if email already exists
+    // RBAC de criação:
+    //   - OWNER pode criar qualquer role (mas criar outro OWNER é não-padrão;
+    //     deveria ser via "transferir posse" futuramente).
+    //   - ADMIN só pode criar OPERATOR.
+    if (currentRole === "ADMIN" && data.role !== "OPERATOR") {
+      return NextResponse.json(
+        { error: "ADMIN só pode criar usuários OPERATOR" },
+        { status: 403 }
+      )
+    }
+    if (data.role === "OWNER" && currentRole !== "OWNER") {
+      return NextResponse.json(
+        { error: "Apenas o proprietário pode designar outro proprietário" },
+        { status: 403 }
+      )
+    }
+
+    // Plan limit — antes podia ser bypassado criando 1 a 1 via UI
+    const [company, userCount] = await Promise.all([
+      prisma.company.findUnique({ where: { id: companyId }, select: { plan: true } }),
+      prisma.user.count({ where: { companyId } }),
+    ])
+    if (!company) {
+      return NextResponse.json({ error: "Empresa não encontrada" }, { status: 404 })
+    }
+    if (!canAddUser(company.plan, userCount)) {
+      return NextResponse.json(
+        { error: getUpgradeMessage(company.plan, "users") },
+        { status: 402 }
+      )
+    }
+
+    const normalizedEmail = data.email.toLowerCase().trim()
+
     const existingUser = await prisma.user.findUnique({
-      where: { email: data.email },
+      where: { email: normalizedEmail },
     })
 
     if (existingUser) {
       return NextResponse.json(
-        { error: "Este e-mail já está em uso" },
+        { error: "Não foi possível criar — verifique os dados" },
         { status: 400 }
       )
     }
 
-    // Hash password
     const passwordHash = await bcrypt.hash(data.password, 12)
 
     const user = await prisma.user.create({
       data: {
         name: data.name,
-        email: data.email,
+        email: normalizedEmail,
         phone: data.phone,
         passwordHash,
         role: data.role,

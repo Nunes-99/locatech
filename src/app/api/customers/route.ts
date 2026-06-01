@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireCompanyId } from "@/lib/session"
+import { canAddCustomer, getUpgradeMessage } from "@/lib/plan-limits"
 import { z } from "zod"
 
 const createCustomerSchema = z.object({
@@ -62,6 +63,21 @@ export async function POST(request: NextRequest) {
     const companyId = await requireCompanyId()
     const body = await request.json()
     const data = createCustomerSchema.parse(body)
+
+    // Plan limit — antes só checado no import CSV
+    const [company, currentCount] = await Promise.all([
+      prisma.company.findUnique({ where: { id: companyId }, select: { plan: true } }),
+      prisma.customer.count({ where: { companyId } }),
+    ])
+    if (!company) {
+      return NextResponse.json({ error: "Empresa não encontrada" }, { status: 404 })
+    }
+    if (!canAddCustomer(company.plan, currentCount)) {
+      return NextResponse.json(
+        { error: getUpgradeMessage(company.plan, "customers") },
+        { status: 402 }
+      )
+    }
 
     // Verificar se documento já existe
     const existing = await prisma.customer.findUnique({

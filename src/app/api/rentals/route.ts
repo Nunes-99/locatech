@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireCompanyId, requirePermission } from "@/lib/session"
 import { dispatchWebhooks } from "@/lib/webhooks"
+import { Prisma, RentalStatus, RentalType } from "@prisma/client"
 import { z } from "zod"
 
 function authErrorResponse(error: Error): NextResponse | null {
@@ -30,6 +31,107 @@ const createRentalSchema = z.object({
     })
   ),
 })
+
+interface CreateRentalTxArgs {
+  companyId: string
+  customerId: string
+  startDate: Date
+  expectedEndDate: Date
+  type: RentalType
+  deliveryAddress?: string
+  subtotal: number
+  deliveryFee: number
+  total: number
+  depositAmount: number
+  notes?: string
+  status: RentalStatus
+  quoteExpiresAt: Date | null
+  rentalItems: Array<{
+    equipmentId: string
+    equipmentCode: string
+    equipmentName: string
+    dailyRate: number
+    quantity: number
+    days: number
+    subtotal: number
+  }>
+}
+
+/**
+ * Roda o create + side effects dentro de uma transação. Aceita `tx` do Prisma
+ * (transaction client). O `contractNumber` é calculado DENTRO da tx pra que,
+ * se duas POSTs concorrentes pegarem o mesmo número, a unique constraint
+ * dispare P2002 e a tx que perdeu a corrida possa retry com número novo.
+ */
+async function createRentalTx(tx: Prisma.TransactionClient, args: CreateRentalTxArgs) {
+  // Próximo número dentro da tx — ainda pode colidir com outra tx em flight,
+  // mas o unique constraint + retry-loop cuidam disso na chamada externa.
+  const lastInTx = await tx.rental.findFirst({
+    where: { companyId: args.companyId },
+    orderBy: { contractNumber: "desc" },
+    select: { contractNumber: true },
+  })
+  const contractNumber = (lastInTx?.contractNumber || 0) + 1
+
+  const newRental = await tx.rental.create({
+    data: {
+      companyId: args.companyId,
+      customerId: args.customerId,
+      contractNumber,
+      startDate: args.startDate,
+      expectedEndDate: args.expectedEndDate,
+      type: args.type,
+      deliveryAddress: args.deliveryAddress,
+      subtotal: args.subtotal,
+      deliveryFee: args.deliveryFee,
+      total: args.total,
+      depositAmount: args.depositAmount,
+      notes: args.notes,
+      status: args.status,
+      quoteExpiresAt: args.quoteExpiresAt,
+      items: {
+        create: args.rentalItems,
+      },
+    },
+    include: {
+      customer: true,
+      items: {
+        include: { equipment: true },
+      },
+    },
+  })
+
+  // Aloca cada equipamento condicionalmente — impede race onde 2 locações
+  // simultâneas pegam o mesmo item. updateMany retorna count: só vale se = 1.
+  for (const item of args.rentalItems) {
+    const claimed = await tx.equipment.updateMany({
+      where: {
+        id: item.equipmentId,
+        companyId: args.companyId,
+        status: "AVAILABLE",
+      },
+      data: {
+        status: "RENTED",
+        totalRentals: { increment: 1 },
+      },
+    })
+    if (claimed.count !== 1) {
+      throw new Error(`Equipamento ${item.equipmentId} indisponível (concorrência)`)
+    }
+  }
+
+  await tx.customer.update({
+    where: { id: args.customerId },
+    data: { totalRentals: { increment: 1 } },
+  })
+
+  await tx.company.update({
+    where: { id: args.companyId },
+    data: { totalRentals: { increment: 1 } },
+  })
+
+  return newRental
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -85,15 +187,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = createRentalSchema.parse(body)
 
-    // Buscar último número de contrato
-    const lastRental = await prisma.rental.findFirst({
-      where: { companyId },
-      orderBy: { contractNumber: "desc" },
-      select: { contractNumber: true },
-    })
-    const contractNumber = (lastRental?.contractNumber || 0) + 1
-
-    // Valida que o cliente pertence à mesma empresa antes de seguir
     const customer = await prisma.customer.findFirst({
       where: { id: data.customerId, companyId },
       select: { id: true },
@@ -105,20 +198,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Calcular valores
     let subtotal = 0
-    const rentalItems: Array<{
-      equipmentId: string
-      equipmentCode: string
-      equipmentName: string
-      dailyRate: number
-      quantity: number
-      days: number
-      subtotal: number
-    }> = []
+    const rentalItems: CreateRentalTxArgs["rentalItems"] = []
 
     for (const item of data.items) {
-      // findFirst com companyId — impede locação referenciar equipamento de outro tenant
       const equipment = await prisma.equipment.findFirst({
         where: { id: item.equipmentId, companyId },
       })
@@ -155,7 +238,6 @@ export async function POST(request: NextRequest) {
     const deliveryFee = data.type === "DELIVERY" ? 50 : 0 // TODO: configurável
     const total = subtotal + deliveryFee
 
-    // Determina data de expiração se for orçamento
     let quoteExpiresAt: Date | null = null
     if (data.asQuote) {
       const company = await prisma.company.findUnique({
@@ -166,80 +248,59 @@ export async function POST(request: NextRequest) {
       quoteExpiresAt = new Date(Date.now() + validDays * 24 * 60 * 60 * 1000)
     }
 
-    // Criar locação em transação
-    const rental = await prisma.$transaction(async (tx) => {
-      // Criar locação
-      const newRental = await tx.rental.create({
-        data: {
-          companyId,
-          customerId: data.customerId,
-          contractNumber,
-          startDate: new Date(data.startDate),
-          expectedEndDate: new Date(data.expectedEndDate),
-          type: data.type,
-          deliveryAddress: data.deliveryAddress,
-          subtotal,
-          deliveryFee,
-          total,
-          depositAmount: data.depositAmount || 0,
-          notes: data.notes,
-          status: data.asQuote ? "QUOTE" : "CONFIRMED",
-          quoteExpiresAt,
-          items: {
-            create: rentalItems,
-          },
-        },
-        include: {
-          customer: true,
-          items: {
-            include: {
-              equipment: true,
-            },
-          },
-        },
-      })
+    const txArgs: CreateRentalTxArgs = {
+      companyId,
+      customerId: data.customerId,
+      startDate: new Date(data.startDate),
+      expectedEndDate: new Date(data.expectedEndDate),
+      type: data.type,
+      deliveryAddress: data.deliveryAddress,
+      subtotal,
+      deliveryFee,
+      total,
+      depositAmount: data.depositAmount || 0,
+      notes: data.notes,
+      status: data.asQuote ? "QUOTE" : "CONFIRMED",
+      quoteExpiresAt,
+      rentalItems,
+    }
 
-      // Atualizar status dos equipamentos com checagem condicional dentro da
-      // transação — impede race onde 2 locações simultâneas pegam o mesmo
-      // equipamento. updateMany retorna count: só vale se for 1.
-      for (const item of data.items) {
-        const claimed = await tx.equipment.updateMany({
-          where: {
-            id: item.equipmentId,
-            companyId,
-            status: "AVAILABLE",
-          },
-          data: {
-            status: "RENTED",
-            totalRentals: { increment: 1 },
-          },
-        })
-        if (claimed.count !== 1) {
-          // Aborta a transação — outro request já alocou o equipamento
-          throw new Error(`Equipamento ${item.equipmentId} indisponível (concorrência)`)
+    // Retry-on-P2002 do contractNumber. Sem isso, duas POSTs concorrentes
+    // viam o mesmo lastRental e a segunda quebrava com 500 opaco. Agora
+    // recalculamos dentro da tx e fazemos retry com pequeno backoff.
+    const MAX_RETRIES = 5
+    let attempt = 0
+    let rental: Awaited<ReturnType<typeof createRentalTx>> | null = null
+
+    while (attempt < MAX_RETRIES) {
+      try {
+        rental = await prisma.$transaction((tx) =>
+          // O tx do client estendido tem tipo mais largo que Prisma.TransactionClient;
+          // os métodos usados são equivalentes na runtime, então cast é seguro.
+          createRentalTx(tx as unknown as Prisma.TransactionClient, txArgs)
+        )
+        break
+      } catch (e) {
+        const code = (e as { code?: string }).code
+        const meta = (e as { meta?: { target?: string[] | string } }).meta
+        const target = Array.isArray(meta?.target) ? meta?.target : meta?.target ? [meta.target] : []
+        const isContractCollision =
+          code === "P2002" && target.some((t) => String(t).includes("contractNumber"))
+        attempt++
+        if (!isContractCollision || attempt >= MAX_RETRIES) {
+          throw e
         }
+        await new Promise((r) => setTimeout(r, 25 * attempt))
       }
+    }
 
-      // Atualizar métricas do cliente — companyId garantido pelo findFirst prévio
-      await tx.customer.update({
-        where: { id: data.customerId },
-        data: {
-          totalRentals: { increment: 1 },
-        },
-      })
+    if (!rental) {
+      return NextResponse.json(
+        { error: "Não foi possível gerar número de contrato após múltiplas tentativas" },
+        { status: 503 }
+      )
+    }
 
-      // Atualizar métricas da empresa
-      await tx.company.update({
-        where: { id: companyId },
-        data: {
-          totalRentals: { increment: 1 },
-        },
-      })
-
-      return newRental
-    })
-
-    // Dispara webhook fire-and-forget (não bloqueia resposta)
     void dispatchWebhooks({
       companyId,
       event: data.asQuote ? "rental.created" : "rental.confirmed",
