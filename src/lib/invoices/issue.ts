@@ -33,18 +33,6 @@ export async function issueInvoiceForRental(opts: {
 }): Promise<IssueResult> {
   const { rentalId, companyId } = opts
 
-  // Idempotência
-  const existing = await prisma.invoice.findFirst({
-    where: {
-      rentalId,
-      status: { in: ["PENDING", "PROCESSING", "ISSUED"] },
-    },
-    select: { id: true, status: true },
-  })
-  if (existing) {
-    return { status: "skipped", invoiceId: existing.id, reason: `Já existe invoice (${existing.status})` }
-  }
-
   const taxConfig = await prisma.companyTaxConfig.findUnique({
     where: { companyId },
   })
@@ -64,25 +52,68 @@ export async function issueInvoiceForRental(opts: {
     .map((i) => `${i.equipmentName} (${i.equipmentCode}) ${i.quantity}× ${i.days}d`)
     .join("; ")}`
 
-  const invoice = await prisma.invoice.create({
-    data: {
-      companyId,
-      rentalId,
-      type: "NFSE",
-      status: "PENDING",
-      amount: rental.total,
-      description,
-      serviceCode: taxConfig.serviceCode,
-      taxRegime: taxConfig.taxRegime,
-      issuedBy: opts.issuedByUserId,
-      issuedByName: opts.issuedByName ?? "Sistema (automático)",
-    },
-  })
+  // Idempotência sob concorrência:
+  // Faz a checagem + create dentro de uma transação Serializable. Postgres
+  // detecta read-write skew entre duas runs concorrentes e aborta uma delas
+  // (P2034). Quem aborta retorna como "skipped". Sem isso, dois cliques no
+  // botão Emitir podiam emitir 2 NF-e reais contra a SEFAZ.
+  let invoice
+  try {
+    invoice = await prisma.$transaction(
+      async (tx) => {
+        const existing = await tx.invoice.findFirst({
+          where: {
+            rentalId,
+            status: { in: ["PENDING", "PROCESSING", "ISSUED"] },
+          },
+          select: { id: true, status: true },
+        })
+        if (existing) {
+          return { existing }
+        }
+
+        const created = await tx.invoice.create({
+          data: {
+            companyId,
+            rentalId,
+            type: "NFSE",
+            status: "PENDING",
+            amount: rental.total,
+            description,
+            serviceCode: taxConfig.serviceCode,
+            taxRegime: taxConfig.taxRegime,
+            issuedBy: opts.issuedByUserId,
+            issuedByName: opts.issuedByName ?? "Sistema (automático)",
+          },
+        })
+        return { created }
+      },
+      { isolationLevel: "Serializable" }
+    )
+  } catch (txErr) {
+    // P2034 = serialization conflict (transação foi abortada por race)
+    if (txErr instanceof Error && (txErr as { code?: string }).code === "P2034") {
+      return { status: "skipped", reason: "Emissão concorrente detectada" }
+    }
+    throw txErr
+  }
+
+  if ("existing" in invoice && invoice.existing) {
+    return {
+      status: "skipped",
+      invoiceId: invoice.existing.id,
+      reason: `Já existe invoice (${invoice.existing.status})`,
+    }
+  }
+  if (!("created" in invoice) || !invoice.created) {
+    return { status: "error", reason: "Falha ao criar invoice (estado inesperado)" }
+  }
+  const createdInvoice = invoice.created
 
   const provider = getInvoiceProvider(taxConfig)
   try {
     const result = await provider.issue({
-      localId: invoice.id,
+      localId: createdInvoice.id,
       type: "NFSE",
       amount: Number(rental.total),
       description,
@@ -129,7 +160,7 @@ export async function issueInvoiceForRental(opts: {
             : "PROCESSING"
 
     await prisma.invoice.update({
-      where: { id: invoice.id },
+      where: { id: createdInvoice.id },
       data: {
         providerId: result.providerId,
         status: finalStatus,
@@ -149,7 +180,7 @@ export async function issueInvoiceForRental(opts: {
       void sendTemplated(rental.customer.email, getInvoiceIssuedEmail, {
         customerName: rental.customer.name,
         contractNumber: rental.contractNumber,
-        invoiceNumber: result.number ?? invoice.id.slice(0, 8),
+        invoiceNumber: result.number ?? createdInvoice.id.slice(0, 8),
         amount: new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
           Number(rental.total)
         ),
@@ -159,10 +190,10 @@ export async function issueInvoiceForRental(opts: {
       })
     }
 
-    return { status: "ok", invoiceId: invoice.id }
+    return { status: "ok", invoiceId: createdInvoice.id }
   } catch (providerError) {
     await prisma.invoice.update({
-      where: { id: invoice.id },
+      where: { id: createdInvoice.id },
       data: {
         status: "ERROR",
         providerMessage: (providerError as Error).message.slice(0, 500),
@@ -170,7 +201,7 @@ export async function issueInvoiceForRental(opts: {
     })
     return {
       status: "error",
-      invoiceId: invoice.id,
+      invoiceId: createdInvoice.id,
       reason: (providerError as Error).message,
     }
   }

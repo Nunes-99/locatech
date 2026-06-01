@@ -93,6 +93,18 @@ export async function POST(request: NextRequest) {
     })
     const contractNumber = (lastRental?.contractNumber || 0) + 1
 
+    // Valida que o cliente pertence à mesma empresa antes de seguir
+    const customer = await prisma.customer.findFirst({
+      where: { id: data.customerId, companyId },
+      select: { id: true },
+    })
+    if (!customer) {
+      return NextResponse.json(
+        { error: "Cliente não encontrado" },
+        { status: 404 }
+      )
+    }
+
     // Calcular valores
     let subtotal = 0
     const rentalItems: Array<{
@@ -106,21 +118,22 @@ export async function POST(request: NextRequest) {
     }> = []
 
     for (const item of data.items) {
-      const equipment = await prisma.equipment.findUnique({
-        where: { id: item.equipmentId },
+      // findFirst com companyId — impede locação referenciar equipamento de outro tenant
+      const equipment = await prisma.equipment.findFirst({
+        where: { id: item.equipmentId, companyId },
       })
 
       if (!equipment) {
         return NextResponse.json(
           { error: `Equipamento ${item.equipmentId} não encontrado` },
-          { status: 400 }
+          { status: 404 }
         )
       }
 
       if (equipment.status !== "AVAILABLE") {
         return NextResponse.json(
           { error: `Equipamento ${equipment.code} não está disponível` },
-          { status: 400 }
+          { status: 409 }
         )
       }
 
@@ -186,18 +199,28 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      // Atualizar status dos equipamentos
+      // Atualizar status dos equipamentos com checagem condicional dentro da
+      // transação — impede race onde 2 locações simultâneas pegam o mesmo
+      // equipamento. updateMany retorna count: só vale se for 1.
       for (const item of data.items) {
-        await tx.equipment.update({
-          where: { id: item.equipmentId },
+        const claimed = await tx.equipment.updateMany({
+          where: {
+            id: item.equipmentId,
+            companyId,
+            status: "AVAILABLE",
+          },
           data: {
             status: "RENTED",
             totalRentals: { increment: 1 },
           },
         })
+        if (claimed.count !== 1) {
+          // Aborta a transação — outro request já alocou o equipamento
+          throw new Error(`Equipamento ${item.equipmentId} indisponível (concorrência)`)
+        }
       }
 
-      // Atualizar métricas do cliente
+      // Atualizar métricas do cliente — companyId garantido pelo findFirst prévio
       await tx.customer.update({
         where: { id: data.customerId },
         data: {
@@ -239,8 +262,10 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-    if (error instanceof Error && error.message === "Não autorizado") {
-      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    const authError = error instanceof Error ? authErrorResponse(error) : null
+    if (authError) return authError
+    if (error instanceof Error && /indisponível \(concorrência\)/.test(error.message)) {
+      return NextResponse.json({ error: error.message }, { status: 409 })
     }
     console.error("Error creating rental:", error)
     return NextResponse.json(
