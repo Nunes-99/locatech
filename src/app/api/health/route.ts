@@ -45,19 +45,20 @@ async function checkResend(): Promise<CheckResult> {
   }
 }
 
-async function checkStripe(): Promise<CheckResult> {
-  const apiKey = process.env.STRIPE_SECRET_KEY
-  if (!apiKey) return { status: "skipped", detail: "STRIPE_SECRET_KEY ausente" }
+async function checkMercadoPago(): Promise<CheckResult> {
+  const accessToken = process.env.MP_ACCESS_TOKEN
+  if (!accessToken) return { status: "skipped", detail: "MP_ACCESS_TOKEN ausente" }
 
   try {
     const t0 = Date.now()
-    const response = await fetch("https://api.stripe.com/v1/balance", {
-      headers: { Authorization: `Bearer ${apiKey}` },
+    // GET /users/me valida o token sem efeitos colaterais
+    const response = await fetch("https://api.mercadopago.com/users/me", {
+      headers: { Authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(5000),
     })
     const latencyMs = Date.now() - t0
     if (!response.ok) {
-      return { status: "error", latencyMs, detail: `Stripe ${response.status}` }
+      return { status: "error", latencyMs, detail: `MP ${response.status}` }
     }
     return { status: "ok", latencyMs }
   } catch (error) {
@@ -77,9 +78,9 @@ export async function GET(request: NextRequest) {
   checks.database = await checkDatabase()
 
   if (detailed) {
-    const [resend, stripe] = await Promise.all([checkResend(), checkStripe()])
+    const [resend, mp] = await Promise.all([checkResend(), checkMercadoPago()])
     checks.resend = resend
-    checks.stripe = stripe
+    checks.mercadopago = mp
   }
 
   // Saúde geral: ok se DB OK e nenhum check externo em erro (skipped não conta)

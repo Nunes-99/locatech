@@ -10,8 +10,8 @@
  * Esta proteção NÃO se aplica a:
  *   - Endpoints públicos (`/api/public/*`, `/api/v1/*`) — esses usam outros mecanismos
  *     (API keys, tokens de uso único)
- *   - Webhooks externos entrando (`/api/stripe/webhook`) — Stripe valida via
- *     assinatura HMAC
+ *   - Webhooks externos entrando (`/api/mp/webhook`, `/api/invoices/webhook`) —
+ *     validados via assinatura HMAC do provider
  *   - Crons (`/api/cron/*`) — protegidos por `CRON_SECRET`
  */
 
@@ -20,7 +20,8 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
 const EXEMPT_PATH_PREFIXES = [
   "/api/public/",
   "/api/v1/",
-  "/api/stripe/webhook",
+  "/api/mp/webhook",
+  "/api/invoices/webhook",
   "/api/cron/",
   // NextAuth lida com seu próprio CSRF
   "/api/auth/",

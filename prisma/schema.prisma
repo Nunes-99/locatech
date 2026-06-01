@@ -51,6 +51,10 @@ model Company {
   plan          CompanyPlan @default(FREE)
   planExpiresAt DateTime?
 
+  // Mercado Pago — assinatura recorrente (preapproval)
+  mpPreapprovalId String? @unique
+  mpPayerId       String?
+
   // Métricas
   totalRentals Int     @default(0)
   totalRevenue Decimal @default(0) @db.Decimal(15, 2)

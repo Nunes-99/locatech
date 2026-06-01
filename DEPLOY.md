@@ -5,7 +5,7 @@
 - Node.js 18+
 - PostgreSQL 15+
 - Conta na Vercel (ou outro provedor)
-- Conta no Stripe (para pagamentos)
+- Conta no Mercado Pago (para pagamentos recorrentes — cartão, Pix, boleto)
 - Conta no Resend (para emails)
 
 ---
@@ -44,11 +44,9 @@ NEXTAUTH_URL="https://seu-dominio.com"
 ### Opcionais (funcionalidades extras)
 
 ```env
-# Stripe (Pagamentos/Planos)
-STRIPE_SECRET_KEY="sk_live_..."
-STRIPE_STARTER_PRICE_ID="price_..."
-STRIPE_PRO_PRICE_ID="price_..."
-STRIPE_WEBHOOK_SECRET="whsec_..."
+# Mercado Pago (Pagamentos/Planos)
+MP_ACCESS_TOKEN="APP_USR-..."
+MP_WEBHOOK_SECRET="..."
 
 # Resend (Emails)
 RESEND_API_KEY="re_..."
@@ -66,25 +64,29 @@ VAPID_PRIVATE_KEY="..."
 
 ---
 
-## 3. Configuracao do Stripe
+## 3. Configuracao do Mercado Pago
 
-### 3.1 Criar produtos no Stripe Dashboard
+### 3.1 Pegar credenciais
 
-1. Acessar https://dashboard.stripe.com/products
-2. Criar produto "Starter" com preco mensal R$ 79,90
-3. Criar produto "Pro" com preco mensal R$ 149,90
-4. Copiar os Price IDs para as variaveis de ambiente
+1. Acessar https://www.mercadopago.com.br/developers/panel
+2. Criar uma aplicação (ou usar uma existente)
+3. Em **Credentials → Production**, copiar o **Access Token** (`APP_USR-...`)
+   - Pra testes, use o de **Test mode** (`TEST-...`)
+4. Colar em `MP_ACCESS_TOKEN`
+
+> Diferente do Stripe, MP não exige criar Product/Price antecipadamente.
+> O preço da assinatura vai no próprio request do `preapproval` — vem de
+> `src/lib/plan-limits.ts:PLAN_PRICES`.
 
 ### 3.2 Configurar Webhook
 
-1. Acessar https://dashboard.stripe.com/webhooks
-2. Adicionar endpoint: `https://seu-dominio.com/api/stripe/webhook`
+1. No painel MP, ir em **Your integrations → [sua app] → Webhooks**
+2. Em **Configuration**, adicionar URL: `https://seu-dominio.com/api/mp/webhook`
 3. Selecionar eventos:
-   - `checkout.session.completed`
-   - `customer.subscription.updated`
-   - `customer.subscription.deleted`
-   - `invoice.payment_failed`
-4. Copiar o Webhook Secret para `STRIPE_WEBHOOK_SECRET`
+   - **Assinaturas (preapproval)**
+   - **Pagamentos avulsos de assinatura (subscription authorized payment)**
+4. Copiar o **Secret key** gerado e colar em `MP_WEBHOOK_SECRET`
+   - Isso é o que valida o `x-signature` HMAC e impede webhooks forjados
 
 ---
 
@@ -152,7 +154,7 @@ Os cron jobs estao configurados em `vercel.json`:
 - [ ] Banco de dados configurado e acessivel
 - [ ] Variaveis de ambiente configuradas
 - [ ] Build executando sem erros
-- [ ] Stripe webhook configurado (se usar pagamentos)
+- [ ] Webhook do Mercado Pago configurado (se usar pagamentos)
 - [ ] Resend configurado (se usar emails)
 - [ ] Primeiro usuario criado
 - [ ] Cron jobs funcionando
@@ -198,7 +200,7 @@ node scripts/generate-icons.js
 ### Pagamentos nao funcionando
 - Verificar se STRIPE_SECRET_KEY esta em modo live
 - Verificar se webhook esta configurado corretamente
-- Verificar logs no Stripe Dashboard
+- Verificar notificações no painel do Mercado Pago (Activity / Webhooks)
 
 ### Cron jobs nao executando
 - Verificar se CRON_SECRET esta configurado

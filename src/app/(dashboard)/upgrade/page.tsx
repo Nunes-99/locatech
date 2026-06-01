@@ -60,7 +60,7 @@ export default function UpgradePage() {
   async function handleUpgrade(plan: "STARTER" | "PRO") {
     setUpgrading(plan)
     try {
-      const response = await fetch("/api/stripe/checkout", {
+      const response = await fetch("/api/mp/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ plan }),

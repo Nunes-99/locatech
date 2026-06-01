@@ -59,7 +59,7 @@ URL_DE_PRODUCAO = https://...vercel.app  (pra eu atualizar NEXTAUTH_URL e webhoo
 
 - Configurar `vercel.json` com env vars de runtime e Cron definitivo
 - Documentar quais env vars são `Production` vs `Preview` no dashboard
-- Configurar Stripe webhook pra apontar pra URL de produção
+- Configurar webhook do Mercado Pago pra apontar pra `https://SEU_DOMINIO/api/mp/webhook`
 
 **⚠️ ATENÇÃO:** upload de imagens (`/api/upload`) **vai quebrar em Vercel**
 porque escreve em filesystem. Antes de promover Vercel pra produção real, faça
@@ -153,7 +153,8 @@ UPSTASH_REDIS_REST_TOKEN  = <token longo>
 
 ## 4. B4.16 — Boleto/Pix (gateway de pagamento brasileiro)
 
-**Por que importa:** Stripe não emite boleto nem Pix nativamente no BR. Locadora
+**Por que importa:** Mercado Pago (que usamos pra assinatura) também serve pra cobrar
+locações se você quiser unificar — ou pode usar Asaas/Efí pra separar contas. Locadora
 de construção tem maioria de cliente PJ que paga via boleto.
 
 **Custo:** Asaas R$ 1,99/boleto, R$ 0,49/Pix; sem mensalidade.

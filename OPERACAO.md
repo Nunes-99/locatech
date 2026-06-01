@@ -11,7 +11,7 @@ Procedimentos para quem opera o LocaTech em produção (proprietário/admin do S
 - **Autenticação**: NextAuth com JWT (sem tabela de sessões para reduzir DB hit por request).
 - **Upload**: hoje em `public/uploads/` (filesystem). **Quebra em serverless** — antes de subir em Vercel, migrar pra blob storage (item B3.1 do roadmap).
 - **Crons**: 3 endpoints em `/api/cron/*` chamados pela Vercel Cron (config em `vercel.json`).
-- **Pagamento**: Stripe Checkout + webhook para evento `checkout.session.completed`.
+- **Pagamento**: Mercado Pago (Preapproval/Assinatura recorrente) + webhook validado por HMAC.
 - **Email**: Resend (API REST simples, fallback silencioso se `RESEND_API_KEY` ausente).
 
 ---
@@ -63,10 +63,8 @@ Variáveis obrigatórias:
 | `NEXTAUTH_SECRET` | `openssl rand -base64 32` | Login falha |
 | `NEXTAUTH_URL` | URL canônica do app (ex: `https://locatech.com.br`) | Reset password manda link errado |
 | `CRON_SECRET` | `openssl rand -hex 32` | Crons retornam 401 |
-| `STRIPE_SECRET_KEY` | `sk_live_...` | `/upgrade` quebra |
-| `STRIPE_WEBHOOK_SECRET` | `whsec_...` (do endpoint configurado) | Webhook rejeita |
-| `STRIPE_STARTER_PRICE_ID` | `price_...` do Starter mensal | Checkout falha |
-| `STRIPE_PRO_PRICE_ID` | `price_...` do Pro mensal | Checkout falha |
+| `MP_ACCESS_TOKEN` | `APP_USR-...` (prod) ou `TEST-...` (test) | `/upgrade` retorna 503 |
+| `MP_WEBHOOK_SECRET` | Secret do painel MP → Webhooks → Configuração | Webhook rejeita assinaturas |
 | `RESEND_API_KEY` | `re_...` | Emails apenas logam warning |
 
 ---
@@ -206,20 +204,24 @@ npx prisma migrate deploy
 
 ---
 
-## Stripe — fluxo de cobrança
+## Mercado Pago — fluxo de cobrança
 
 1. Cliente clica em "Assinar" em `/upgrade`
-2. `POST /api/stripe/checkout` cria `checkout.session` e devolve URL
-3. Cliente paga no hosted checkout do Stripe
-4. Stripe envia `checkout.session.completed` para `/api/stripe/webhook`
-5. Webhook atualiza `Company.plan` e `Company.planExpiresAt`
+2. `POST /api/mp/checkout` cria um **preapproval** (assinatura) e devolve `init_point`
+3. Cliente é redirecionado pro Mercado Pago e escolhe forma de pagamento
+   (cartão recorrente, Pix recorrente ou boleto recorrente)
+4. MP envia notificação pra `/api/mp/webhook` (`type=preapproval` ou `subscription_*`)
+5. Webhook **valida assinatura HMAC** via `x-signature` e busca o preapproval na API
+   do MP — não confia no body
+6. Status `authorized` → atualiza `Company.plan`, `planExpiresAt` (+30d) e
+   `mpPreapprovalId`. Status `cancelled` → downgrade pra FREE.
 
-**Quando uma assinatura falha (cartão recusado):**
-- Webhook `invoice.payment_failed` é recebido
-- Sistema *não* cancela imediatamente (cliente tem janela do Stripe pra atualizar cartão)
-- Após N tentativas (configuração no Stripe), webhook `customer.subscription.deleted` → rebaixar para FREE
+**Quando uma cobrança falha:**
+- MP tenta novamente (configuração no painel — geralmente 3x)
+- Após esgotar, status vira `cancelled` e webhook rebaixa pra FREE
 
-**Reembolso/cancelamento:** fazer no dashboard do Stripe → webhook propaga.
+**Reembolso/cancelamento:** fazer no painel do MP ou via `DELETE /preapproval/{id}`
+usando `mpPreapprovalId`. O webhook propaga o `cancelled`.
 
 ---
 

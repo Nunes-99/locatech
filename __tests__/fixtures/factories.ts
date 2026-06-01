@@ -60,6 +60,8 @@ export function buildCompany(overrides: Partial<Company> = {}): Company {
     primaryColor: "#2563EB",
     plan: "FREE",
     planExpiresAt: null,
+    mpPreapprovalId: null,
+    mpPayerId: null,
     totalRentals: 0,
     totalRevenue: "0" as unknown as Company["totalRevenue"],
     ...baseTimestamps(),

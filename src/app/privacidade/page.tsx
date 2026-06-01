@@ -69,7 +69,7 @@ export default function PrivacidadePage() {
         </p>
         <ul>
           <li>
-            <strong>Stripe</strong> (processamento de pagamento) — dados de cartão e cobrança
+            <strong>Mercado Pago</strong> (processamento de pagamento) — dados de cartão, Pix e cobrança
           </li>
           <li>
             <strong>Resend</strong> (envio de e-mails transacionais)

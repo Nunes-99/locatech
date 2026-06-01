@@ -50,7 +50,8 @@ export default function TermosPage() {
         <h2>4. Planos e Pagamento</h2>
         <p>
           A Plataforma oferece planos Gratuito, Starter e Profissional, cujos preços e
-          limites estão descritos na página inicial. Pagamentos são processados via Stripe.
+          limites estão descritos na página inicial. Pagamentos são processados via Mercado Pago
+          (cartão, Pix ou boleto).
           Cancelamentos podem ser feitos a qualquer momento, sem reembolso proporcional do
           mês corrente.
         </p>
