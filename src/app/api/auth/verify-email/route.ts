@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { logAuthEvent } from "@/lib/audit"
+import { getClientIp } from "@/lib/rate-limit"
 import { PrismaClient } from "@prisma/client"
 import { z } from "zod"
+import crypto from "crypto"
 
 const baseClient: PrismaClient = (prisma as unknown as { $extends: unknown }) as PrismaClient
 
@@ -13,16 +15,21 @@ const verifySchema = z.object({
 /**
  * Verifica o token enviado no email e marca `emailVerified` no usuário.
  *
- * Idempotente: se o token já foi usado, retorna sucesso (o cliente pode ter dado
- * F5 na página de confirmação).
+ * Idempotente: se o token já foi usado, retorna sucesso (cliente pode ter
+ * dado F5 na página de confirmação).
+ *
+ * Token cru vai no link do email; no DB guardamos só o hash. Hash incoming
+ * e compara contra `emailVerifyToken`.
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { token } = verifySchema.parse(body)
 
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex")
+
     const user = await prisma.user.findUnique({
-      where: { emailVerifyToken: token },
+      where: { emailVerifyToken: hashedToken },
       select: {
         id: true,
         email: true,
@@ -33,20 +40,18 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    if (!user) {
-      return NextResponse.json({ error: "Token inválido" }, { status: 400 })
+    // Resposta unificada pra inválido/expirado — evita um atacante distinguir
+    // "token real mas expirado" de "token nunca existiu" via leak de email.
+    if (!user || (user.emailVerifyTokenExpiry && user.emailVerifyTokenExpiry < new Date())) {
+      return NextResponse.json(
+        { error: "Token inválido ou expirado. Solicite um novo email de verificação após o login." },
+        { status: 400 }
+      )
     }
 
-    // Já verificado → idempotente, devolve sucesso
+    // Já verificado → idempotente
     if (user.emailVerified) {
       return NextResponse.json({ success: true, alreadyVerified: true })
-    }
-
-    if (user.emailVerifyTokenExpiry && user.emailVerifyTokenExpiry < new Date()) {
-      return NextResponse.json(
-        { error: "Token expirado. Solicite um novo email de verificação." },
-        { status: 410 }
-      )
     }
 
     await prisma.user.update({
@@ -63,8 +68,8 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       userEmail: user.email,
       userName: user.name,
-      action: "PASSWORD_RESET_COMPLETED", // reusa enum existente; semantica é "verificação"
-      ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined,
+      action: "EMAIL_VERIFIED",
+      ipAddress: getClientIp(request.headers),
       userAgent: request.headers.get("user-agent") || undefined,
     })
 

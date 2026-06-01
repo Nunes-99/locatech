@@ -74,8 +74,24 @@ export function buildFocusProvider(credentials: { token: string; env: string }):
       throw new Error("Focus NF-e query: não implementado (esqueleto)")
     },
 
-    async parseWebhook(headers: Headers, rawBody: string): Promise<WebhookPayload> {
-      // Focus envia POST com JSON sem assinatura HMAC; validação é por IP whitelist
+    verifyWebhook(_headers: Headers, _rawBody: string, clientIp: string): boolean {
+      // Focus não assina o webhook — autenticação é por IP allowlist.
+      // Configure `INVOICE_WEBHOOK_ALLOWED_IPS` com os IPs documentados em
+      // https://focusnfe.com.br/doc/#nfe_webhooks (separados por vírgula).
+      const allowed = (process.env.INVOICE_WEBHOOK_ALLOWED_IPS || "")
+        .split(",")
+        .map((ip) => ip.trim())
+        .filter(Boolean)
+
+      if (allowed.length === 0) {
+        // Sem allowlist configurada: bloqueia tudo. Falha-seguro.
+        console.error("[focus webhook] INVOICE_WEBHOOK_ALLOWED_IPS não configurado")
+        return false
+      }
+      return allowed.includes(clientIp)
+    },
+
+    async parseWebhook(_headers: Headers, rawBody: string): Promise<WebhookPayload> {
       const data = JSON.parse(rawBody)
       return {
         localId: data.ref,

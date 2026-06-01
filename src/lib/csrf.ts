@@ -13,6 +13,12 @@
  *   - Webhooks externos entrando (`/api/mp/webhook`, `/api/invoices/webhook`) —
  *     validados via assinatura HMAC do provider
  *   - Crons (`/api/cron/*`) — protegidos por `CRON_SECRET`
+ *   - Apenas as rotas que o **próprio NextAuth** serve têm exemption (callback,
+ *     signin, signout, _log) — porque o NextAuth tem seu próprio CSRF interno.
+ *     Nossas rotas custom em `/api/auth/*` (forgot/reset/change-password,
+ *     2FA, sessions, verify-email) caem no check normal — sem isso, um site
+ *     malicioso podia disparar revogação de sessões ou setup de 2FA num
+ *     usuário logado.
  */
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
@@ -23,8 +29,11 @@ const EXEMPT_PATH_PREFIXES = [
   "/api/mp/webhook",
   "/api/invoices/webhook",
   "/api/cron/",
-  // NextAuth lida com seu próprio CSRF
-  "/api/auth/",
+  // Rotas do NextAuth (apenas as que ele realmente serve)
+  "/api/auth/callback/",
+  "/api/auth/signin",
+  "/api/auth/signout",
+  "/api/auth/_log",
 ]
 
 export interface CsrfCheckResult {

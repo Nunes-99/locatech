@@ -31,15 +31,17 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 })
     if (user.emailVerified) return NextResponse.json({ message: "Email já verificado" })
 
-    const token = crypto.randomBytes(32).toString("hex")
+    // Token cru no link; hash no DB
+    const rawToken = crypto.randomBytes(32).toString("hex")
+    const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex")
     const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000)
 
     await prisma.user.update({
       where: { id: user.id },
-      data: { emailVerifyToken: token, emailVerifyTokenExpiry: expiry },
+      data: { emailVerifyToken: hashedToken, emailVerifyTokenExpiry: expiry },
     })
 
-    const verifyLink = `${process.env.NEXTAUTH_URL || ""}/verificar-email?token=${token}`
+    const verifyLink = `${process.env.NEXTAUTH_URL || ""}/verificar-email?token=${rawToken}`
 
     await sendTemplated(user.email, getEmailVerifyEmail, {
       userName: user.name,

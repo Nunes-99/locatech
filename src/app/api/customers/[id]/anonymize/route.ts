@@ -63,24 +63,47 @@ export async function POST(
 
     const shortId = customer.id.slice(0, 8)
     const timestamp = new Date()
-    const anonymizedDoc = `ANON-${shortId}-${timestamp.getTime()}`
+    // Documento anônimo único — usa o id como sufixo (UUID nunca colide).
+    // Se o campo é VARCHAR(14) (CPF), trunca; UUID base sem hífen tem 32 chars
+    // então mesmo "ANON" + 10 chars do id já é único per-company.
+    const idClean = customer.id.replaceAll("-", "")
+    const anonymizedDoc = `ANON${idClean.slice(0, 10)}`
 
-    const anonymized = await prisma.customer.update({
-      where: { id },
-      data: {
-        name: `[ANONIMIZADO] Cliente #${shortId}`,
-        document: anonymizedDoc.slice(0, 14), // respeita o limite do campo
-        documentType: "CPF",
-        phone: "00000000000",
-        email: null,
-        address: null,
-        city: null,
-        state: null,
-        zipCode: null,
-        notes: `Dados pessoais anonimizados em ${timestamp.toISOString()} a pedido do titular (LGPD Art. 18). Histórico financeiro preservado por obrigação legal.`,
-        isBlocked: true,
-        blockReason: "Anonimizado por solicitação LGPD",
-      },
+    const anonymized = await prisma.$transaction(async (tx) => {
+      const updated = await tx.customer.update({
+        where: { id },
+        data: {
+          name: `[ANONIMIZADO] Cliente #${shortId}`,
+          document: anonymizedDoc,
+          documentType: "CPF",
+          phone: "00000000000",
+          email: null,
+          address: null,
+          city: null,
+          state: null,
+          zipCode: null,
+          notes: `Dados pessoais anonimizados em ${timestamp.toISOString()} a pedido do titular (LGPD Art. 18). Histórico financeiro preservado por obrigação legal.`,
+          isBlocked: true,
+          blockReason: "Anonimizado por solicitação LGPD",
+        },
+      })
+
+      // Scrub PII em todas as locações do cliente. A assinatura digital é PII
+      // sensível (biometria comportamental), endereço de entrega idem.
+      // Mantém valores financeiros e timestamps — obrigação legal de guarda.
+      await tx.rental.updateMany({
+        where: { customerId: id, companyId },
+        data: {
+          customerSignatureUrl: null,
+          customerSignedIp: null,
+          deliveryAddress: null,
+          notes: null,
+          internalNotes: null,
+          contractUrl: null,
+        },
+      })
+
+      return updated
     })
 
     // Registro explícito de anonimização (a auditoria automática já capturaria a UPDATE,

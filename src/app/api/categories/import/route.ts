@@ -6,6 +6,7 @@ import { z } from "zod"
 
 const HEADERS = ["name", "description", "icon"] as const
 const REQUIRED = ["name"] as const
+const MAX_ROWS = 5000
 
 const rowSchema = z.object({
   name: z.string().min(1),
@@ -31,6 +32,12 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+    if (lines.length - 1 > MAX_ROWS) {
+      return NextResponse.json(
+        { error: `Limite de ${MAX_ROWS} linhas por importação` },
+        { status: 413 }
+      )
+    }
 
     let headerIndex: Record<string, number>
     try {
@@ -43,15 +50,17 @@ export async function POST(request: NextRequest) {
       where: { companyId },
       select: { name: true },
     })
-    const existingNames = new Set(existing.map((c) => c.name.toLowerCase()))
+    const knownNames = new Set(existing.map((c) => c.name.toLowerCase()))
 
+    // Pre-validação completa: sem nada gravado no DB. Se qualquer linha tem
+    // erro, voltamos sem persistir nada (atomicidade).
+    type Valid = z.infer<typeof rowSchema>
+    const validRows: { line: number; data: Valid }[] = []
     const errors: { line: number; error: string }[] = []
-    const created: string[] = []
 
     for (let i = 1; i < lines.length; i++) {
       const lineNum = i + 1
       const cells = splitCsvLine(lines[i])
-
       const raw = {
         name: readCsvCell(cells, headerIndex, "name")?.trim(),
         description: readCsvCell(cells, headerIndex, "description")?.trim() || undefined,
@@ -69,33 +78,50 @@ export async function POST(request: NextRequest) {
         continue
       }
       const data = parsed.data
-
-      if (existingNames.has(data.name.toLowerCase())) {
-        errors.push({ line: lineNum, error: `Categoria "${data.name}" já existe` })
+      const lower = data.name.toLowerCase()
+      if (knownNames.has(lower)) {
+        errors.push({ line: lineNum, error: `Categoria "${data.name}" já existe (ou duplicada no CSV)` })
         continue
       }
+      knownNames.add(lower) // detecta dup dentro do próprio CSV
+      validRows.push({ line: lineNum, data })
+    }
 
-      try {
-        const cat = await prisma.equipmentCategory.create({
+    if (errors.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Importação cancelada — nenhuma linha foi salva. Corrija os erros e reenvie.",
+          processed: lines.length - 1,
+          created: 0,
+          errors,
+        },
+        { status: 422 }
+      )
+    }
+
+    // Insert atômico — se qualquer create falhar, rollback completo.
+    const created = await prisma.$transaction(async (tx) => {
+      const ids: string[] = []
+      for (const row of validRows) {
+        const cat = await tx.equipmentCategory.create({
           data: {
             companyId,
-            name: data.name,
-            description: data.description ?? null,
-            icon: data.icon ?? null,
+            name: row.data.name,
+            description: row.data.description ?? null,
+            icon: row.data.icon ?? null,
           },
         })
-        created.push(cat.id)
-        existingNames.add(data.name.toLowerCase())
-      } catch (err) {
-        errors.push({ line: lineNum, error: (err as Error).message })
+        ids.push(cat.id)
       }
-    }
+      return ids
+    })
 
     return NextResponse.json({
       success: true,
       processed: lines.length - 1,
       created: created.length,
-      errors,
+      errors: [],
     })
   } catch (error) {
     if (error instanceof Error) {

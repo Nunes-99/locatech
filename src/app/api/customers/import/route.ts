@@ -21,6 +21,7 @@ const HEADERS = [
 ] as const
 
 const REQUIRED = ["name", "document", "phone"] as const
+const MAX_ROWS = 5000
 
 const rowSchema = z.object({
   name: z.string().min(1),
@@ -59,6 +60,12 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+    if (lines.length - 1 > MAX_ROWS) {
+      return NextResponse.json(
+        { error: `Limite de ${MAX_ROWS} linhas por importação` },
+        { status: 413 }
+      )
+    }
 
     let headerIndex: Record<string, number>
     try {
@@ -67,17 +74,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: (err as Error).message }, { status: 400 })
     }
 
-    const company = await prisma.company.findUnique({
-      where: { id: companyId },
-      select: { plan: true },
-    })
+    const [company, existingCount, existing] = await Promise.all([
+      prisma.company.findUnique({ where: { id: companyId }, select: { plan: true } }),
+      prisma.customer.count({ where: { companyId } }),
+      prisma.customer.findMany({ where: { companyId }, select: { document: true } }),
+    ])
     if (!company) {
       return NextResponse.json({ error: "Empresa não encontrada" }, { status: 404 })
     }
-    const currentCount = await prisma.customer.count({ where: { companyId } })
+    const knownDocs = new Set(existing.map((c) => c.document))
 
+    type Valid = z.infer<typeof rowSchema>
+    const validRows: { line: number; data: Valid }[] = []
     const errors: { line: number; error: string }[] = []
-    const created: string[] = []
 
     for (let i = 1; i < lines.length; i++) {
       const lineNum = i + 1
@@ -122,47 +131,65 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      if (!canAddCustomer(company.plan, currentCount + created.length)) {
-        errors.push({ line: lineNum, error: getUpgradeMessage(company.plan, "customers") })
-        break
-      }
-
-      const dup = await prisma.customer.findUnique({
-        where: { companyId_document: { companyId, document: data.document } },
-      })
-      if (dup) {
-        errors.push({ line: lineNum, error: `Documento ${data.document} já cadastrado` })
+      if (knownDocs.has(data.document)) {
+        errors.push({ line: lineNum, error: `Documento ${data.document} já cadastrado (ou duplicado no CSV)` })
         continue
       }
+      knownDocs.add(data.document)
+      validRows.push({ line: lineNum, data })
+    }
 
-      try {
-        const customer = await prisma.customer.create({
+    // Checa plan limit considerando TODAS as válidas — se exceder, falha sem
+    // gravar nada (em vez do antigo `break` no meio do loop).
+    if (!canAddCustomer(company.plan, existingCount + validRows.length)) {
+      errors.push({
+        line: 0,
+        error: getUpgradeMessage(company.plan, "customers"),
+      })
+    }
+
+    if (errors.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Importação cancelada — nenhuma linha foi salva. Corrija os erros e reenvie.",
+          processed: lines.length - 1,
+          created: 0,
+          errors,
+        },
+        { status: 422 }
+      )
+    }
+
+    const created = await prisma.$transaction(async (tx) => {
+      const ids: string[] = []
+      for (const row of validRows) {
+        const c = await tx.customer.create({
           data: {
             companyId,
-            name: data.name,
-            document: data.document,
-            documentType: data.documentType,
-            phone: data.phone!,
-            email: data.email ?? null,
-            address: data.address ?? null,
-            city: data.city ?? null,
-            state: data.state ?? null,
-            zipCode: data.zipCode ?? null,
-            creditLimit: data.creditLimit ?? null,
-            notes: data.notes ?? null,
+            name: row.data.name,
+            document: row.data.document,
+            documentType: row.data.documentType,
+            phone: row.data.phone!,
+            email: row.data.email ?? null,
+            address: row.data.address ?? null,
+            city: row.data.city ?? null,
+            state: row.data.state ?? null,
+            zipCode: row.data.zipCode ?? null,
+            creditLimit: row.data.creditLimit ?? null,
+            notes: row.data.notes ?? null,
           },
         })
-        created.push(customer.id)
-      } catch (err) {
-        errors.push({ line: lineNum, error: (err as Error).message })
+        ids.push(c.id)
       }
-    }
+      return ids
+    })
 
     return NextResponse.json({
       success: true,
       processed: lines.length - 1,
       created: created.length,
-      errors,
+      errors: [],
     })
   } catch (error) {
     if (error instanceof Error) {

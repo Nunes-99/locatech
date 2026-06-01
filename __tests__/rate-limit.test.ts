@@ -60,13 +60,32 @@ describe("getClientIp", () => {
     expect(getClientIp(h)).toBe("1.2.3.4")
   })
 
-  it("pega o primeiro IP da chain x-forwarded-for", () => {
+  it("pega o ÚLTIMO IP da chain x-forwarded-for (o que o proxy confiável adicionou)", () => {
+    // O primeiro IP pode ter sido injetado pelo próprio cliente — não confiar.
+    // O último (mais à direita) é o que o último proxy de confiança colocou.
     const h = makeHeaders({ "x-forwarded-for": "1.2.3.4, 5.6.7.8, 9.10.11.12" })
-    expect(getClientIp(h)).toBe("1.2.3.4")
+    expect(getClientIp(h)).toBe("9.10.11.12")
   })
 
-  it("faz fallback pra x-real-ip", () => {
+  it("faz fallback pra x-real-ip quando XFF ausente", () => {
     const h = makeHeaders({ "x-real-ip": "10.0.0.1" })
+    expect(getClientIp(h)).toBe("10.0.0.1")
+  })
+
+  it("cf-connecting-ip tem prioridade sobre x-real-ip e XFF", () => {
+    const h = makeHeaders({
+      "cf-connecting-ip": "203.0.113.1",
+      "x-real-ip": "10.0.0.1",
+      "x-forwarded-for": "1.2.3.4",
+    })
+    expect(getClientIp(h)).toBe("203.0.113.1")
+  })
+
+  it("x-real-ip tem prioridade sobre XFF", () => {
+    const h = makeHeaders({
+      "x-real-ip": "10.0.0.1",
+      "x-forwarded-for": "1.2.3.4",
+    })
     expect(getClientIp(h)).toBe("10.0.0.1")
   })
 
@@ -75,8 +94,8 @@ describe("getClientIp", () => {
     expect(getClientIp(h)).toBe("unknown")
   })
 
-  it("trim de espaços", () => {
-    const h = makeHeaders({ "x-forwarded-for": "  1.2.3.4  ,5.6.7.8" })
-    expect(getClientIp(h)).toBe("1.2.3.4")
+  it("trim de espaços no último IP", () => {
+    const h = makeHeaders({ "x-forwarded-for": "1.2.3.4 ,  5.6.7.8  " })
+    expect(getClientIp(h)).toBe("5.6.7.8")
   })
 })

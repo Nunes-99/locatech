@@ -88,6 +88,7 @@ export function buildUser(overrides: Partial<User> = {}): User {
     tokensInvalidatedAt: null,
     totpSecret: null,
     totpEnabledAt: null,
+    totpPendingSecret: null,
     totpBackupCodes: [],
     ...baseTimestamps(),
     ...overrides,

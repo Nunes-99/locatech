@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { z } from "zod"
 import bcrypt from "bcryptjs"
+import crypto from "crypto"
 import { rateLimit, getClientIp } from "@/lib/rate-limit"
 import { logAuthEvent } from "@/lib/audit"
 import { checkPasswordStrength } from "@/lib/validators"
@@ -41,10 +42,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Find user with valid token
+    // Token cru veio no link; no DB guardamos só o hash. Hash incoming e
+    // compara contra `resetToken` (que já é o hash).
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex")
+
     const user = await prisma.user.findFirst({
       where: {
-        resetToken: token,
+        resetToken: hashedToken,
         resetTokenExpiry: { gt: new Date() },
       },
     })
@@ -59,13 +63,16 @@ export async function POST(request: NextRequest) {
     // Hash new password
     const passwordHash = await bcrypt.hash(password, 12)
 
-    // Update password and clear reset token
+    // Atualiza senha, limpa token de reset e invalida sessões antigas.
+    // Reset de senha quase sempre indica suspeita de comprometimento —
+    // forçamos logout em todos os dispositivos.
     await prisma.user.update({
       where: { id: user.id },
       data: {
         passwordHash,
         resetToken: null,
         resetTokenExpiry: null,
+        tokensInvalidatedAt: new Date(),
       },
     })
 

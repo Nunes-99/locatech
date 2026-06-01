@@ -60,6 +60,12 @@ export const MockProvider: InvoiceProvider = {
     }
   },
 
+  verifyWebhook(_headers: Headers, _rawBody: string, _clientIp: string): boolean {
+    // Mock só roda em dev — assume webhook válido. Em produção sempre usar
+    // provider real com validação real.
+    return true
+  },
+
   async parseWebhook(_headers: Headers, rawBody: string): Promise<WebhookPayload> {
     try {
       const data = JSON.parse(rawBody)

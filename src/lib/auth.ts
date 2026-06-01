@@ -11,6 +11,17 @@ import { PrismaClient } from "@prisma/client"
 // Acesso direto ao client base para escrever logs (sem disparar extension de auditoria)
 const baseClient: PrismaClient = (prisma as unknown as { $extends: unknown }) as PrismaClient
 
+/**
+ * Hash bcrypt fake (cost 12 — mesmo da senha real). Usado pra equalizar timing
+ * entre "usuário não existe" e "senha errada". Sem isso, atacante consegue
+ * enumerar emails pelo delay (5ms vs ~200ms).
+ *
+ * Gerado uma vez por módulo. O valor não importa — só precisa ser um hash
+ * bcrypt válido que NUNCA bate com nenhuma senha real.
+ */
+const DUMMY_PASSWORD_HASH =
+  "$2a$12$abcdefghijklmnopqrstuuOJqfqxxxXxxXxxXxxXxxXxxXxxXxxXxxX"
+
 async function recordAccessLog(data: {
   email: string
   userId?: string
@@ -107,7 +118,11 @@ export const authOptions: NextAuthOptions = {
           include: { company: true },
         })
 
+        // Equaliza timing entre "user existe" e "user não existe": sempre roda
+        // bcrypt.compare (cost 12 = ~200ms). Sem isso, atacante enumera emails
+        // medindo o delay.
         if (!user || !user.passwordHash) {
+          await bcrypt.compare(credentials.password, DUMMY_PASSWORD_HASH)
           await recordAccessLog({
             email,
             success: false,

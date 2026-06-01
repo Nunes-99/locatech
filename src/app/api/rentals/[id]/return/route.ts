@@ -29,7 +29,7 @@ export async function POST(
       include: {
         items: true,
         customer: true,
-        company: { select: { name: true } },
+        company: { select: { name: true, lateFeePercent: true } },
       },
     })
 
@@ -48,17 +48,46 @@ export async function POST(
     }
 
     const now = new Date()
+
+    // Calcula multa por atraso baseada no actualEndDate vs expectedEndDate.
+    // Antes: o cron `late-fees` rodava diariamente e atualizava `rental.lateFee`,
+    // mas se o cliente devolveu antes do cron rodar OU se a janela de atraso
+    // foi curta (poucas horas), a multa saía como 0. Agora calculamos no
+    // momento da devolução pra garantir cobrança correta.
+    const expectedEnd = new Date(rental.expectedEndDate)
+    let lateDays = 0
+    let lateFee = 0
+    if (now > expectedEnd) {
+      const msPerDay = 24 * 60 * 60 * 1000
+      lateDays = Math.ceil((now.getTime() - expectedEnd.getTime()) / msPerDay)
+      const lateFeePercent = Number(rental.company.lateFeePercent) // % ao dia
+      const dailyFee = (Number(rental.total) * lateFeePercent) / 100
+      lateFee = dailyFee * lateDays
+    }
+
     const additionalTotal = (data.additionalCost || 0) + (data.damageCost || 0)
-    const newTotal = Number(rental.total) + additionalTotal
+    const newTotal = Number(rental.total) + additionalTotal + lateFee
 
     const updatedRental = await prisma.$transaction(async (tx) => {
-      // Atualizar locação
+      // Atualizar locação — também grava lateDays/lateFee se houve atraso.
+      // Re-lemos internalNotes do DB dentro da tx pra evitar overwrite caso
+      // o operador tenha editado entre o load inicial e o commit.
+      const fresh = await tx.rental.findUnique({
+        where: { id },
+        select: { internalNotes: true },
+      })
+      const noteAddition = data.returnNotes
+        ? `\n\nNotas da devolução: ${data.returnNotes}${data.damageDescription ? `\nDanos: ${data.damageDescription}` : ""}`
+        : ""
+
       const updated = await tx.rental.update({
         where: { id },
         data: {
           status: "RETURNED",
           actualEndDate: now,
-          internalNotes: data.returnNotes ? `${rental.internalNotes || ""}\n\nNotas da devolução: ${data.returnNotes}${data.damageDescription ? `\nDanos: ${data.damageDescription}` : ""}`.trim() : undefined,
+          lateDays,
+          lateFee,
+          internalNotes: noteAddition ? `${fresh?.internalNotes || ""}${noteAddition}`.trim() : undefined,
           total: newTotal,
         },
         include: {

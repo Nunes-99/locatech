@@ -118,6 +118,19 @@ export interface InvoiceProvider {
   /// Emite Carta de Correção Eletrônica (CCe) — disponível para NF-e modelo 55.
   /// NFS-e raramente suporta — depende da prefeitura. Provider sinaliza com success=false.
   correct?(input: CorrectionInput): Promise<CorrectionResult>
-  /// Faz parse do payload do webhook + valida signature se aplicável.
+  /**
+   * Valida autenticidade do webhook recebido — HMAC, IP allowlist, etc.
+   *
+   * Retorna `true` se o webhook é genuíno do provider. Retorna `false` ou
+   * lança erro se a validação falhar. O webhook NÃO deve ser processado nesse
+   * caso.
+   *
+   * Cada provider implementa sua estratégia:
+   *   - Focus: IP allowlist via env INVOICE_WEBHOOK_ALLOWED_IPS
+   *   - PlugNotas: JWT signature
+   *   - Mock: sempre `true` (apenas dev)
+   */
+  verifyWebhook(headers: Headers, rawBody: string, clientIp: string): boolean
+  /// Faz parse do payload do webhook (depois que `verifyWebhook` aprovou).
   parseWebhook(headers: Headers, rawBody: string): Promise<WebhookPayload>
 }

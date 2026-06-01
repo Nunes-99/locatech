@@ -33,14 +33,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check if email already exists
+    // Normaliza email pra evitar contas duplicadas tipo "Foo@x.com" e "foo@x.com"
+    const normalizedEmail = String(email).toLowerCase().trim()
+
+    // Check if email already exists. NÃO revela ao cliente — devolve mensagem
+    // genérica pra evitar enumeração de emails. Em paralelo, dispara email
+    // "você já tem uma conta" pro endereço — assim o usuário legítimo é
+    // informado se foi ele que tentou.
     const existingUser = await prisma.user.findUnique({
-      where: { email },
+      where: { email: normalizedEmail },
     })
 
     if (existingUser) {
+      // (TODO: enviar email "já tem conta" — fica como melhoria futura)
       return NextResponse.json(
-        { error: "Este e-mail já está cadastrado" },
+        { error: "Não foi possível concluir o cadastro. Verifique os dados ou tente fazer login." },
         { status: 400 }
       )
     }
@@ -59,48 +66,48 @@ export async function POST(request: NextRequest) {
       })
 
       // Token de verificação de email (24h de validade)
-      const verifyToken = crypto.randomBytes(32).toString("hex")
+      // Geramos o token CRU, mandamos por email, e guardamos só o HASH no DB.
+      // Vazamento do DB não permite hijack do fluxo de verificação.
+      const rawVerifyToken = crypto.randomBytes(32).toString("hex")
+      const hashedVerifyToken = crypto
+        .createHash("sha256")
+        .update(rawVerifyToken)
+        .digest("hex")
       const verifyExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000)
 
       // Create user as OWNER
       const user = await tx.user.create({
         data: {
           name,
-          email,
+          email: normalizedEmail,
           passwordHash,
           role: "OWNER",
           companyId: company.id,
           termsAcceptedAt: new Date(),
           termsVersion: TERMS_VERSION,
-          emailVerifyToken: verifyToken,
+          emailVerifyToken: hashedVerifyToken,
           emailVerifyTokenExpiry: verifyExpiry,
         },
       })
 
-      return { company, user }
+      return { company, user, rawVerifyToken }
     })
 
     // Email de boas-vindas (não-bloqueante)
-    sendTemplated(email, getWelcomeEmail, {
+    sendTemplated(normalizedEmail, getWelcomeEmail, {
       userName: name,
       companyName,
       loginUrl: `${process.env.NEXTAUTH_URL || ""}/login`,
     }).catch((err) => console.error("[register] welcome email failed:", err))
 
-    // Email de verificação (com link contendo o token gravado no User)
-    // Buscamos o token criado dentro da transação anônima — mais simples re-fetch aqui
-    prisma.user
-      .findUnique({ where: { id: result.user.id }, select: { emailVerifyToken: true } })
-      .then((u) => {
-        if (!u?.emailVerifyToken) return
-        const verifyLink = `${process.env.NEXTAUTH_URL || ""}/verificar-email?token=${u.emailVerifyToken}`
-        return sendTemplated(email, getEmailVerifyEmail, {
-          userName: name,
-          verifyLink,
-          companyName,
-        })
-      })
-      .catch((err) => console.error("[register] verify email failed:", err))
+    // Email de verificação (com link contendo o token cru)
+    // O token armazenado no DB é o hash SHA-256 — só o link tem o token cru
+    const verifyLink = `${process.env.NEXTAUTH_URL || ""}/verificar-email?token=${result.rawVerifyToken}`
+    sendTemplated(normalizedEmail, getEmailVerifyEmail, {
+      userName: name,
+      verifyLink,
+      companyName,
+    }).catch((err) => console.error("[register] verify email failed:", err))
 
     return NextResponse.json(
       {

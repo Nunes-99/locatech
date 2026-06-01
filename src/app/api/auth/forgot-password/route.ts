@@ -20,48 +20,60 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Rate limit: 3 pedidos por hora por IP
+    const normalizedEmail = String(email).toLowerCase().trim()
     const ip = getClientIp(request.headers)
-    const rl = rateLimit({
-      key: `forgot:${ip}`,
+
+    // Dois rate limits independentes:
+    //   - Por IP (3/hora): impede um IP só de spamar muitos emails
+    //   - Por EMAIL (5/dia): impede botnet de floodar caixa de um alvo
+    const rlIp = rateLimit({
+      key: `forgot:ip:${ip}`,
       limit: 3,
       windowMs: 60 * 60 * 1000,
     })
-    if (!rl.allowed) {
+    if (!rlIp.allowed) {
       return NextResponse.json(
-        { error: `Muitas solicitações. Tente novamente em ${Math.ceil((rl.retryAfterSeconds || 60) / 60)} min.` },
+        { error: `Muitas solicitações. Tente novamente em ${Math.ceil((rlIp.retryAfterSeconds || 60) / 60)} min.` },
         { status: 429 }
       )
     }
+    const rlEmail = rateLimit({
+      key: `forgot:email:${normalizedEmail}`,
+      limit: 5,
+      windowMs: 24 * 60 * 60 * 1000,
+    })
+    if (!rlEmail.allowed) {
+      // Resposta genérica — não revela se o email existe
+      return NextResponse.json({ message: "E-mail enviado" })
+    }
 
-    // Find user
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: { email: normalizedEmail },
       include: { company: { select: { name: true } } },
     })
 
-    // Always return success to prevent email enumeration
+    // Sempre devolve sucesso pra evitar enumeração
     if (!user) {
       return NextResponse.json({ message: "E-mail enviado" })
     }
 
-    // Generate reset token
-    const resetToken = crypto.randomBytes(32).toString("hex")
-    const resetTokenExpiry = new Date(Date.now() + 3600000) // 1 hour
+    // Token cru vai no email; hash SHA-256 vai pro DB. Dump do DB não permite
+    // hijack — atacante precisaria do email pra usar o token.
+    const rawToken = crypto.randomBytes(32).toString("hex")
+    const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex")
+    const resetTokenExpiry = new Date(Date.now() + 3600000) // 1 hora
 
-    // Save token to user
     await prisma.user.update({
       where: { id: user.id },
       data: {
-        resetToken,
+        resetToken: hashedToken,
         resetTokenExpiry,
       },
     })
 
-    // Send email with reset link
-    const resetLink = `${process.env.NEXTAUTH_URL}/redefinir-senha?token=${resetToken}`
+    const resetLink = `${process.env.NEXTAUTH_URL}/redefinir-senha?token=${rawToken}`
 
-    await sendTemplated(email, getPasswordResetEmail, {
+    await sendTemplated(normalizedEmail, getPasswordResetEmail, {
       userName: user.name,
       resetLink,
       companyName: user.company.name,

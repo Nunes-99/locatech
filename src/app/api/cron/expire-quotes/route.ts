@@ -27,19 +27,22 @@ export async function GET(request: NextRequest) {
         deletedAt: null,
         quoteExpiresAt: { lt: now },
       },
-      select: { id: true, companyId: true, contractNumber: true },
+      // pega internalNotes pra fazer append sem sobrescrever notas do operador
+      select: { id: true, companyId: true, contractNumber: true, internalNotes: true },
     })
 
     const cancelledIds: string[] = []
     for (const rental of expired) {
+      const expiredLine = `[${now.toLocaleString("pt-BR")}] Orçamento expirado automaticamente.`
+      const newNotes = rental.internalNotes
+        ? `${rental.internalNotes}\n${expiredLine}`
+        : expiredLine
+
       await prisma.rental.update({
         where: { id: rental.id },
         data: {
           status: "CANCELLED",
-          internalNotes: {
-            // append nota explicativa
-            set: `[${now.toLocaleString("pt-BR")}] Orçamento expirado automaticamente.`,
-          },
+          internalNotes: newNotes,
         },
       })
 
