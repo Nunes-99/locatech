@@ -65,8 +65,15 @@ export async function PUT(request: NextRequest) {
     // Criptografa credenciais antes de gravar — DB dump não expõe tokens
     // de Focus/PlugNotas/etc. O formato persistido é `{ enc: "enc:v1:..." }`
     // pra distinguir de JSON crú legado (que `getInvoiceProvider` ainda lê).
+    //
+    // Importante: `{}` vazio é tratado como "não atualizar" — sem isso, um
+    // PUT que limpa o campo no form (objeto vazio) apagaria as credenciais
+    // válidas anteriores.
     const creds = data.providerCredentials
-    const credsToStore = creds ? { enc: encryptJson(creds) } : undefined
+    const credsToStore =
+      creds && Object.keys(creds).length > 0
+        ? { enc: encryptJson(creds) }
+        : undefined
 
     const config = await prisma.companyTaxConfig.upsert({
       where: { companyId: user.companyId },

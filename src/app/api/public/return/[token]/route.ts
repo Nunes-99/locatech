@@ -103,12 +103,27 @@ export async function POST(
     const now = new Date()
     const hasDamage = data.conditions?.some((c) => c.condition === "DAMAGED") ?? false
 
+    // Antes (CRITICAL bug): atacante com 1 token de devolução podia POSTar
+    // `conditions: [{itemId: <id de OUTRA locação>, condition: "DAMAGED", notes: "..."}]`
+    // e flagar items de qualquer outra empresa como danificados — write
+    // cross-tenant sem auth. Agora restringimos ao set de itemIds que vêm
+    // com o rental carregado pelo token.
+    const validItemIds = new Set(rental.items.map((i) => i.id))
+
     await prisma.$transaction(async (tx) => {
-      // Marca conditions em cada item, se vieram
       if (data.conditions) {
         for (const c of data.conditions) {
-          await tx.rentalItem.update({
-            where: { id: c.itemId },
+          if (!validItemIds.has(c.itemId)) {
+            // Silenciosamente pula em vez de 400 — atacante não consegue
+            // confirmar quais IDs existem via probing. Em dev, log.
+            console.warn(
+              `[return confirm] itemId ${c.itemId} não pertence ao rental ${rental.id}, ignorado`
+            )
+            continue
+          }
+          // updateMany com rentalId no where = defesa dupla (set check + DB guard)
+          await tx.rentalItem.updateMany({
+            where: { id: c.itemId, rentalId: rental.id },
             data: {
               returnCondition: c.condition,
               damageNotes: c.notes ?? null,

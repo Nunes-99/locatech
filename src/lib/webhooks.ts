@@ -91,6 +91,18 @@ async function deliverOne(
     secretPlain = decryptString(webhook.secret)
   } catch (err) {
     console.error(`[webhooks] falha decriptando secret ${webhook.id}:`, err)
+    // Persiste a falha pro operador ver na UI — antes ficava silenciosamente
+    // sem entregar, fingindo saudável.
+    await prisma.webhook
+      .update({
+        where: { id: webhook.id },
+        data: {
+          lastFailureAt: new Date(),
+          failureCount: { increment: 1 },
+          lastFailureError: "Falha ao decriptar secret (key rotacionada ou ausente)",
+        },
+      })
+      .catch(() => {})
     return
   }
   const signature = crypto

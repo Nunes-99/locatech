@@ -70,8 +70,8 @@ export async function GET(
 }
 
 const confirmSchema = z.object({
-  /** PNG base64 data URL da assinatura (opcional). */
-  signatureDataUrl: z.string().startsWith("data:image/").optional(),
+  /** PNG base64 data URL da assinatura (opcional). Cap 200KB. */
+  signatureDataUrl: z.string().startsWith("data:image/").max(200_000).optional(),
 })
 
 export async function POST(

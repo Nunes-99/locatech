@@ -9,17 +9,17 @@ const rescheduleSchema = z.object({
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const companyId = await requireCompanyId()
+    const { id } = await params
     const body = await request.json()
     const { daysDiff } = rescheduleSchema.parse(body)
 
-    // Find the rental
     const rental = await prisma.rental.findFirst({
       where: {
-        id: params.id,
+        id,
         companyId,
         deletedAt: null,
       },
@@ -27,20 +27,18 @@ export async function PATCH(
 
     if (!rental) {
       return NextResponse.json(
-        { error: "Locacao nao encontrada" },
+        { error: "Locação não encontrada" },
         { status: 404 }
       )
     }
 
-    // Only allow rescheduling confirmed rentals
     if (rental.status !== "CONFIRMED") {
       return NextResponse.json(
-        { error: "Apenas locacoes confirmadas podem ser reagendadas" },
+        { error: "Apenas locações confirmadas podem ser reagendadas" },
         { status: 400 }
       )
     }
 
-    // Calculate new dates
     const currentStartDate = new Date(rental.startDate)
     const currentEndDate = new Date(rental.expectedEndDate)
 
@@ -50,19 +48,17 @@ export async function PATCH(
     const newEndDate = new Date(currentEndDate)
     newEndDate.setDate(newEndDate.getDate() + daysDiff)
 
-    // Don't allow rescheduling to the past
     const now = new Date()
     now.setHours(0, 0, 0, 0)
     if (newStartDate < now) {
       return NextResponse.json(
-        { error: "Nao e possivel reagendar para uma data passada" },
+        { error: "Não é possível reagendar para uma data passada" },
         { status: 400 }
       )
     }
 
-    // Update the rental
     const updatedRental = await prisma.rental.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         startDate: newStartDate,
         expectedEndDate: newEndDate,
@@ -74,15 +70,15 @@ export async function PATCH(
     console.error("Error rescheduling rental:", error)
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: "Dados invalidos" },
+        { error: "Dados inválidos" },
         { status: 400 }
       )
     }
-    if (error instanceof Error && error.message === "Nao autorizado") {
-      return NextResponse.json({ error: "Nao autorizado" }, { status: 401 })
+    if (error instanceof Error && error.message === "Não autorizado") {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
     }
     return NextResponse.json(
-      { error: "Erro ao reagendar locacao" },
+      { error: "Erro ao reagendar locação" },
       { status: 500 }
     )
   }

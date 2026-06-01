@@ -27,12 +27,20 @@ const SENSITIVE_FIELDS = new Set([
   "resetToken",
   "resetTokenExpiry",
   "emailVerifyToken",
+  "emailVerifyTokenExpiry",
   "totpSecret",
   "totpPendingSecret",
+  "totpPendingSecretExpiresAt",
   "totpBackupCodes",
   "keyHash",
   "secret",
   "providerCredentials",
+  // PII / biometria — antes ficava no diff visível em /auditoria
+  "customerSignatureUrl",
+  "customerSignedIp",
+  // Identificadores externos (Mercado Pago) — não-críticos mas PII-grade
+  "mpPayerId",
+  "mpPreapprovalId",
 ])
 
 function sanitize(data: unknown): unknown {

