@@ -57,12 +57,22 @@ export async function POST(
     const newExpectedEndDate = new Date(rental.expectedEndDate)
     newExpectedEndDate.setDate(newExpectedEndDate.getDate() + additionalDays)
 
+    // Determina o lateFee/lateDays APÓS a extensão. Se estava OVERDUE e a
+    // nova data é futura, a extensão "perdoa" o atraso → zera. Caso contrário,
+    // mantém. Compute aqui e use o MESMO valor em newTotal e no update — antes
+    // havia bug: newTotal somava o lateFee antigo mas o update zerava, total
+    // não batia com sum-of-parts.
+    const willClearLateFee =
+      rental.status === "OVERDUE" && newExpectedEndDate > new Date()
+    const newLateFee = willClearLateFee ? 0 : Number(rental.lateFee)
+    const newLateDays = willClearLateFee ? 0 : rental.lateDays
+
     const newSubtotal = Number(rental.subtotal) + additionalAmount
     const newTotal =
       newSubtotal +
       Number(rental.deliveryFee) -
       Number(rental.discount) +
-      Number(rental.lateFee)
+      newLateFee
 
     const noteLine = `[${new Date().toLocaleString("pt-BR")}] Locação estendida em ${additionalDays} dia(s) por ${user.name}. Valor extra: R$ ${additionalAmount.toFixed(2)}.${
       reason ? ` Motivo: ${reason}` : ""
@@ -79,19 +89,9 @@ export async function POST(
             ? `${rental.internalNotes}\n${noteLine}`
             : noteLine,
           // Se estava OVERDUE e a nova data é futura, volta pra IN_PROGRESS
-          status:
-            rental.status === "OVERDUE" && newExpectedEndDate > new Date()
-              ? "IN_PROGRESS"
-              : rental.status,
-          // Zera multa se voltou pra IN_PROGRESS — extensão acordada não é mais atraso
-          lateFee:
-            rental.status === "OVERDUE" && newExpectedEndDate > new Date()
-              ? 0
-              : rental.lateFee,
-          lateDays:
-            rental.status === "OVERDUE" && newExpectedEndDate > new Date()
-              ? 0
-              : rental.lateDays,
+          status: willClearLateFee ? "IN_PROGRESS" : rental.status,
+          lateFee: newLateFee,
+          lateDays: newLateDays,
         },
         include: {
           customer: true,

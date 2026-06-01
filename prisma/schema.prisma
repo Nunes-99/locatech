@@ -132,7 +132,10 @@ model User {
   /// Secret candidato durante o setup (step 1). Movido pra `totpSecret` apenas
   /// após verificação do código (step 2). Impede atacante com sessão de
   /// atrelar 2FA a um secret que ele controla.
-  totpPendingSecret String?
+  totpPendingSecret          String?
+  /// Setup pending expira em 15min — sem isso, secret ficava no DB
+  /// indefinidamente após user abandonar o fluxo.
+  totpPendingSecretExpiresAt DateTime?
   /// Hashes SHA-256 dos códigos de backup (NÃO os códigos em claro). Plain
   /// exibido pro user só uma vez na ativação. Cada uso remove o hash.
   totpBackupCodes String[]

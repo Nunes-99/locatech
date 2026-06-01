@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requirePermission } from "@/lib/session"
 import { hasFeature } from "@/lib/plan-limits"
+import { encryptJson } from "@/lib/crypto"
+import { Prisma } from "@prisma/client"
 import { z } from "zod"
 
 const taxConfigSchema = z.object({
@@ -60,7 +62,12 @@ export async function PUT(request: NextRequest) {
     const body = await request.json()
     const data = taxConfigSchema.parse(body)
 
-    const creds = data.providerCredentials // pode ser undefined/null/Record
+    // Criptografa credenciais antes de gravar — DB dump não expõe tokens
+    // de Focus/PlugNotas/etc. O formato persistido é `{ enc: "enc:v1:..." }`
+    // pra distinguir de JSON crú legado (que `getInvoiceProvider` ainda lê).
+    const creds = data.providerCredentials
+    const credsToStore = creds ? { enc: encryptJson(creds) } : undefined
+
     const config = await prisma.companyTaxConfig.upsert({
       where: { companyId: user.companyId },
       create: {
@@ -72,7 +79,7 @@ export async function PUT(request: NextRequest) {
         serviceCode: data.serviceCode ?? null,
         issRate: data.issRate,
         provider: data.provider,
-        ...(creds ? { providerCredentials: creds } : {}),
+        ...(credsToStore ? { providerCredentials: credsToStore as Prisma.InputJsonValue } : {}),
         providerEnv: data.providerEnv,
         autoIssueOnRentalCompletion: data.autoIssueOnRentalCompletion,
       },
@@ -86,7 +93,7 @@ export async function PUT(request: NextRequest) {
         provider: data.provider,
         // Só atualiza credenciais se vier valor truthy — assim a UI pode salvar
         // outras configurações sem precisar re-enviar a credencial cada vez.
-        ...(creds ? { providerCredentials: creds } : {}),
+        ...(credsToStore ? { providerCredentials: credsToStore as Prisma.InputJsonValue } : {}),
         providerEnv: data.providerEnv,
         autoIssueOnRentalCompletion: data.autoIssueOnRentalCompletion,
       },

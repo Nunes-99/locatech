@@ -36,15 +36,19 @@ export async function POST(request: NextRequest) {
     const user = await requireAuth()
     const body = await request.json().catch(() => ({}))
 
-    // Modo 1: gerar secret e gravar como pending
+    // Modo 1: gerar secret e gravar como pending (válido por 15 minutos)
     if (!body.code) {
       const secret = generateTotpSecret()
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000)
       await prisma.user.update({
         where: { id: user.id },
-        data: { totpPendingSecret: secret },
+        data: {
+          totpPendingSecret: secret,
+          totpPendingSecretExpiresAt: expiresAt,
+        },
       })
       const otpauthUrl = buildOtpAuthUrl(secret, user.email)
-      return NextResponse.json({ secret, otpauthUrl })
+      return NextResponse.json({ secret, otpauthUrl, expiresInSeconds: 15 * 60 })
     }
 
     // Modo 2: ativar (lê secret do DB, ignora qualquer secret do body)
@@ -52,12 +56,30 @@ export async function POST(request: NextRequest) {
 
     const dbUser = await prisma.user.findUnique({
       where: { id: user.id },
-      select: { totpPendingSecret: true, totpEnabledAt: true },
+      select: {
+        totpPendingSecret: true,
+        totpPendingSecretExpiresAt: true,
+        totpEnabledAt: true,
+      },
     })
     if (!dbUser?.totpPendingSecret) {
       return NextResponse.json(
         { error: "Setup 2FA não iniciado. Gere um QR code primeiro." },
         { status: 400 }
+      )
+    }
+    // Expira pending após 15min — evita secret órfão no DB caso user abandone
+    if (
+      dbUser.totpPendingSecretExpiresAt &&
+      dbUser.totpPendingSecretExpiresAt < new Date()
+    ) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { totpPendingSecret: null, totpPendingSecretExpiresAt: null },
+      })
+      return NextResponse.json(
+        { error: "Setup expirou. Gere um novo QR code." },
+        { status: 410 }
       )
     }
     if (dbUser.totpEnabledAt) {
@@ -81,6 +103,7 @@ export async function POST(request: NextRequest) {
       data: {
         totpSecret: dbUser.totpPendingSecret,
         totpPendingSecret: null,
+        totpPendingSecretExpiresAt: null,
         totpEnabledAt: new Date(),
         totpBackupCodes: hashedBackupCodes,
       },

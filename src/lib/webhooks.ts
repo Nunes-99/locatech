@@ -1,5 +1,6 @@
 import crypto from "crypto"
 import { prisma } from "./prisma"
+import { decryptString } from "./crypto"
 
 /**
  * Eventos disparáveis. Adicione novos eventos aqui e nos pontos de chamada
@@ -83,8 +84,17 @@ async function deliverOne(
   timestamp: number
 ): Promise<void> {
   // Assinatura HMAC SHA256 sobre o body. Subscriber deve recomputar e comparar.
+  // decryptString é no-op se o secret estiver em plaintext (legado) ou se a
+  // env APP_ENCRYPTION_KEY não estiver configurada.
+  let secretPlain: string
+  try {
+    secretPlain = decryptString(webhook.secret)
+  } catch (err) {
+    console.error(`[webhooks] falha decriptando secret ${webhook.id}:`, err)
+    return
+  }
   const signature = crypto
-    .createHmac("sha256", webhook.secret)
+    .createHmac("sha256", secretPlain)
     .update(body)
     .digest("hex")
 

@@ -14,8 +14,8 @@ import { issueInvoiceForRental } from "@/lib/invoices/issue"
 export const dynamic = "force-dynamic"
 
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get("authorization")
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const { verifyCronSecret } = await import("@/lib/cron-auth")
+  if (!verifyCronSecret(request.headers.get("authorization"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

@@ -12,9 +12,8 @@ import { prisma } from "@/lib/prisma"
 export const dynamic = "force-dynamic"
 
 export async function GET(request: NextRequest) {
-  // Proteção pra evitar disparo externo sem token
-  const authHeader = request.headers.get("authorization")
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const { verifyCronSecret } = await import("@/lib/cron-auth")
+  if (!verifyCronSecret(request.headers.get("authorization"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

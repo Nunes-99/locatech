@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requirePermission } from "@/lib/session"
 import { WEBHOOK_EVENTS } from "@/lib/webhooks"
+import { encryptString } from "@/lib/crypto"
 import { z } from "zod"
 import crypto from "crypto"
 
@@ -17,8 +18,25 @@ export async function GET() {
     const webhooks = await prisma.webhook.findMany({
       where: { companyId: user.companyId },
       orderBy: { createdAt: "desc" },
+      // Secret nunca volta no GET — só na resposta do create.
+      select: {
+        id: true,
+        name: true,
+        url: true,
+        events: true,
+        isActive: true,
+        lastSuccessAt: true,
+        lastFailureAt: true,
+        lastFailureError: true,
+        successCount: true,
+        failureCount: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     })
-    return NextResponse.json(webhooks)
+    return NextResponse.json(webhooks, {
+      headers: { "Cache-Control": "no-store" },
+    })
   } catch (error) {
     return handle(error)
   }
@@ -30,7 +48,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = createSchema.parse(body)
 
-    const secret = `whsec_${crypto.randomBytes(24).toString("hex")}`
+    const rawSecret = `whsec_${crypto.randomBytes(24).toString("hex")}`
 
     const webhook = await prisma.webhook.create({
       data: {
@@ -38,12 +56,29 @@ export async function POST(request: NextRequest) {
         name: data.name,
         url: data.url,
         events: data.events,
-        secret,
+        // Armazenado criptografado (AES-256-GCM) se APP_ENCRYPTION_KEY estiver
+        // setado. Sem a key, ainda persiste em plaintext (dev fallback).
+        secret: encryptString(rawSecret),
+      },
+      select: {
+        id: true,
+        name: true,
+        url: true,
+        events: true,
+        isActive: true,
+        createdAt: true,
       },
     })
 
-    // Retorna o secret apenas no momento do create — depois fica oculto
-    return NextResponse.json(webhook, { status: 201 })
+    // Retorna o secret CRU UMA VEZ — depois só sai criptografado do DB.
+    return NextResponse.json(
+      {
+        ...webhook,
+        secret: rawSecret,
+        warning: "Guarde este secret — não será exibido novamente.",
+      },
+      { status: 201, headers: { "Cache-Control": "no-store" } }
+    )
   } catch (error) {
     return handle(error)
   }
