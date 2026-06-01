@@ -3,6 +3,7 @@ import { PrismaAdapter } from "@auth/prisma-adapter"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { prisma } from "./prisma"
 import bcrypt from "bcryptjs"
+import crypto from "crypto"
 import { headers } from "next/headers"
 import { rateLimit, getClientIp } from "./rate-limit"
 import { logAuthEvent } from "./audit"
@@ -13,14 +14,17 @@ const baseClient: PrismaClient = (prisma as unknown as { $extends: unknown }) as
 
 /**
  * Hash bcrypt fake (cost 12 — mesmo da senha real). Usado pra equalizar timing
- * entre "usuário não existe" e "senha errada". Sem isso, atacante consegue
- * enumerar emails pelo delay (5ms vs ~200ms).
+ * entre "usuário não existe" e "senha errada". Sem isso, atacante enumera
+ * emails pelo delay (5ms vs ~200ms).
  *
- * Gerado uma vez por módulo. O valor não importa — só precisa ser um hash
- * bcrypt válido que NUNCA bate com nenhuma senha real.
+ * Gerado uma vez por módulo a partir de input aleatório — nunca vai bater com
+ * nenhuma senha real. O cost de geração (1x ~200ms no boot do processo) é
+ * aceitável; deploys são raros.
  */
-const DUMMY_PASSWORD_HASH =
-  "$2a$12$abcdefghijklmnopqrstuuOJqfqxxxXxxXxxXxxXxxXxxXxxXxxXxxX"
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(
+  crypto.randomBytes(32).toString("hex"),
+  12
+)
 
 async function recordAccessLog(data: {
   email: string

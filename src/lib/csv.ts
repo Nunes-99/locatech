@@ -72,3 +72,39 @@ export function readCsvCell(
   if (idx === undefined) return undefined
   return row[idx]
 }
+
+/**
+ * Sanitiza valor de célula pra EXPORT — previne CSV injection.
+ *
+ * Excel/Sheets interpretam células que começam com `=`, `+`, `-`, `@`, TAB
+ * ou CR como fórmula. Atacante com nome `=HYPERLINK("evil.com","clique")` ou
+ * `=cmd|'/c calc'!A1` consegue execução quando vítima abre o CSV.
+ *
+ * Solução padrão (OWASP): prefixa com apóstrofo `'` os valores começando com
+ * caracteres perigosos. Excel exibe sem o apóstrofo mas trata como texto.
+ *
+ * Aplicar em TODA célula que sai pro CSV de export. Não aplicar no import
+ * (queremos preservar conteúdo original do user).
+ */
+const DANGEROUS_PREFIX = /^[=+\-@\t\r]/
+
+export function sanitizeCsvCell(value: unknown): string {
+  if (value === null || value === undefined) return ""
+  const str = String(value)
+  if (DANGEROUS_PREFIX.test(str)) return `'${str}`
+  return str
+}
+
+/**
+ * Helper pra montar uma linha CSV escapando aspas e sanitizando cada célula.
+ */
+export function csvRow(cells: unknown[]): string {
+  return cells
+    .map((c) => {
+      const s = sanitizeCsvCell(c)
+      // se contém vírgula, aspas ou quebra de linha → encapsula em aspas e duplica aspas internas
+      if (/[",\r\n;]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+      return s
+    })
+    .join(",")
+}

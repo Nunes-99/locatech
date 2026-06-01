@@ -2,15 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requirePermission } from "@/lib/session"
 import { AuditAction } from "@prisma/client"
-
-function csvEscape(value: unknown): string {
-  if (value === null || value === undefined) return ""
-  const str = String(value)
-  if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
-    return `"${str.replace(/"/g, '""')}"`
-  }
-  return str
-}
+import { csvRow } from "@/lib/csv"
 
 export async function GET(request: NextRequest) {
   try {
@@ -58,10 +50,13 @@ export async function GET(request: NextRequest) {
       "Alterações (JSON)",
     ]
 
-    const rows = [headers.map(csvEscape).join(",")]
+    // csvRow sanitiza cada célula contra CSV injection (Excel/Sheets executam
+    // fórmulas se a célula começa com =/+/-/@). Atacante com nome
+    // "=HYPERLINK('evil')" detonava quando admin abria o export.
+    const rows = [csvRow(headers)]
     for (const log of logs) {
       rows.push(
-        [
+        csvRow([
           log.createdAt.toISOString(),
           log.userName,
           log.userEmail,
@@ -71,9 +66,7 @@ export async function GET(request: NextRequest) {
           log.ipAddress,
           log.userAgent,
           log.changes ? JSON.stringify(log.changes) : "",
-        ]
-          .map(csvEscape)
-          .join(",")
+        ])
       )
     }
 

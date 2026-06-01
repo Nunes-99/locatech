@@ -10,12 +10,29 @@ const AUDITED_MODELS = new Set([
   "Maintenance",
   "User",
   "Company",
+  "ApiKey",
+  "Webhook",
+  "Store",
+  "Invoice",
+  "CompanyTaxConfig",
 ])
 
+/**
+ * Campos sensíveis que NÃO podem aparecer em audit log mesmo quando o registro
+ * é capturado por inteiro. Cobrem: hashes de senha/token, secrets TOTP em
+ * claro, hashes de API key, credenciais de provider fiscal, secrets de webhook.
+ */
 const SENSITIVE_FIELDS = new Set([
   "passwordHash",
   "resetToken",
   "resetTokenExpiry",
+  "emailVerifyToken",
+  "totpSecret",
+  "totpPendingSecret",
+  "totpBackupCodes",
+  "keyHash",
+  "secret",
+  "providerCredentials",
 ])
 
 function sanitize(data: unknown): unknown {
@@ -98,9 +115,77 @@ export function auditExtension(client: PrismaClient) {
           }
           return result
         },
+        async updateMany({ model, args, query }) {
+          const result = await query(args)
+          if (AUDITED_MODELS.has(model)) {
+            // updateMany não retorna IDs afetados, só count. Registramos uma
+            // entrada agregada com o where e o count — não ideal pra forense
+            // detalhada, mas pelo menos a operação fica rastreada.
+            await writeAuditBulk(client, model, "UPDATE", {
+              bulk: true,
+              where: sanitize((args as any).where),
+              data: sanitize((args as any).data),
+              count: (result as { count?: number })?.count ?? null,
+            })
+          }
+          return result
+        },
+        async deleteMany({ model, args, query }) {
+          const result = await query(args)
+          if (AUDITED_MODELS.has(model)) {
+            await writeAuditBulk(client, model, "DELETE", {
+              bulk: true,
+              where: sanitize((args as any).where),
+              count: (result as { count?: number })?.count ?? null,
+            })
+          }
+          return result
+        },
+        async createMany({ model, args, query }) {
+          const result = await query(args)
+          if (AUDITED_MODELS.has(model)) {
+            await writeAuditBulk(client, model, "CREATE", {
+              bulk: true,
+              count: (result as { count?: number })?.count ?? null,
+            })
+          }
+          return result
+        },
       },
     },
   })
+}
+
+/**
+ * Grava entrada agregada pra operações bulk. Usa entityId="*" pra sinalizar
+ * que o registro cobre múltiplos IDs (o where + count contém o detalhe).
+ */
+async function writeAuditBulk(
+  client: PrismaClient,
+  entity: string,
+  action: AuditAction,
+  changes: Record<string, unknown>
+) {
+  const ctx = getAuditContext()
+  if (!ctx || !ctx.companyId) return
+  try {
+    await client.auditLog.create({
+      data: {
+        companyId: ctx.companyId,
+        userId: ctx.userId || null,
+        userEmail: ctx.userEmail || null,
+        userName: ctx.userName || null,
+        action,
+        entity,
+        entityId: "*",
+        changes: changes as Prisma.InputJsonValue,
+        ipAddress: ctx.ipAddress || null,
+        userAgent: ctx.userAgent || null,
+      },
+    })
+  } catch (error) {
+    console.error("[audit] failed to write bulk log:", error)
+  }
 }
 
 function lowerFirst(s: string) {

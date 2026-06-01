@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireCompanyId } from "@/lib/session"
+import { csvRow, sanitizeCsvCell } from "@/lib/csv"
 import ExcelJS from "exceljs"
 
 export const dynamic = "force-dynamic"
@@ -13,19 +14,27 @@ interface ReportData {
   columnFormat?: Array<"currency" | "date" | "integer" | undefined>
 }
 
-function csvEscape(value: unknown): string {
+function formatForCsv(value: unknown): string {
   if (value === null || value === undefined) return ""
   if (value instanceof Date) return value.toLocaleDateString("pt-BR")
   return String(value)
-    .replace(/"/g, '""')
 }
 
 function toCSV({ headers, rows }: ReportData): string {
-  const lines = [headers.map((h) => `"${csvEscape(h)}"`).join(",")]
+  // csvRow sanitiza fórmula injection (=cmd, +Hyperlink, etc) — fundamental
+  // num export que o admin abre no Excel.
+  const lines = [csvRow(headers)]
   for (const row of rows) {
-    lines.push(row.map((c) => `"${csvEscape(c)}"`).join(","))
+    lines.push(csvRow(row.map((c) => formatForCsv(c))))
   }
   return "﻿" + lines.join("\r\n") // BOM pra Excel reconhecer UTF-8
+}
+
+// Em XLSX, ExcelJS escreve valores literais — protege contra fórmula via
+// sanitizeCsvCell em strings que começam com chars perigosos.
+function sanitizeXlsxValue(v: unknown): unknown {
+  if (typeof v === "string") return sanitizeCsvCell(v)
+  return v
 }
 
 async function toXLSX(
@@ -50,8 +59,8 @@ async function toXLSX(
   header.alignment = { vertical: "middle", horizontal: "left" }
   header.height = 22
 
-  // Dados
-  for (const row of rows) sheet.addRow(row)
+  // Dados — sanitiza strings que começam com chars de fórmula
+  for (const row of rows) sheet.addRow(row.map(sanitizeXlsxValue))
 
   // Formato por coluna
   if (columnFormat) {

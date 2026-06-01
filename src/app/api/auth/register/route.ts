@@ -3,10 +3,26 @@ import { prisma } from "@/lib/prisma"
 import { hashPassword } from "@/lib/auth"
 import { sendTemplated, getWelcomeEmail, getEmailVerifyEmail } from "@/lib/notifications/email"
 import { checkPasswordStrength, TERMS_VERSION } from "@/lib/validators"
+import { rateLimit, getClientIp } from "@/lib/rate-limit"
 import crypto from "crypto"
 
 export async function POST(request: NextRequest) {
   try {
+    // Rate limit anti-spam de criação de conta. 3/hora/IP é generoso pra uso
+    // legítimo (a pessoa pode errar e re-cadastrar) e barra trial-abuse.
+    const ip = getClientIp(request.headers)
+    const rl = rateLimit({
+      key: `register:${ip}`,
+      limit: 3,
+      windowMs: 60 * 60 * 1000,
+    })
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: `Muitas tentativas. Tente em ${Math.ceil((rl.retryAfterSeconds || 60) / 60)} min.` },
+        { status: 429 }
+      )
+    }
+
     const body = await request.json()
     const { companyName, name, email, password, acceptedTerms } = body
 
