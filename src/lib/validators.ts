@@ -113,3 +113,44 @@ export function unmaskCurrency(value: string): number {
   const cleaned = value.replace(/\D/g, "")
   return parseInt(cleaned || "0") / 100
 }
+
+// ============================================
+// SENHA — força mínima
+// ============================================
+//
+// Regras: 8+ caracteres, ao menos 1 letra e 1 dígito.
+// Não exige símbolo (compromisso entre segurança e usabilidade — para SaaS B2B
+// que cobra mensalmente, atrito demais na criação de conta vira churn).
+
+export const TERMS_VERSION = "2026-05-29"
+
+export interface PasswordCheck {
+  ok: boolean
+  errors: string[]
+  strength: 0 | 1 | 2 | 3 | 4 // 0=muito fraca, 4=forte
+}
+
+export function checkPasswordStrength(pwd: string): PasswordCheck {
+  const errors: string[] = []
+  if (pwd.length < 8) errors.push("Mínimo 8 caracteres")
+  if (!/[a-zA-Z]/.test(pwd)) errors.push("Inclua ao menos uma letra")
+  if (!/\d/.test(pwd)) errors.push("Inclua ao menos um número")
+
+  let strength: PasswordCheck["strength"] = 0
+  if (pwd.length >= 8) strength++
+  if (pwd.length >= 12) strength++
+  if (/[A-Z]/.test(pwd) && /[a-z]/.test(pwd)) strength++
+  if (/[^A-Za-z0-9]/.test(pwd)) strength++
+  if (strength > 4) strength = 4
+
+  return { ok: errors.length === 0, errors, strength: strength as PasswordCheck["strength"] }
+}
+
+export const STRENGTH_LABELS = ["Muito fraca", "Fraca", "Razoável", "Boa", "Forte"] as const
+export const STRENGTH_COLORS = [
+  "bg-red-500",
+  "bg-orange-500",
+  "bg-yellow-500",
+  "bg-lime-500",
+  "bg-green-500",
+] as const

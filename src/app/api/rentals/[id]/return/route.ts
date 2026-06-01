@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireCompanyId } from "@/lib/session"
+import { requireCompanyId, requirePermission } from "@/lib/session"
+import { sendTemplated, getRentalReturnedEmail } from "@/lib/notifications/email"
+import { dispatchWebhooks } from "@/lib/webhooks"
 import { z } from "zod"
 
 const returnSchema = z.object({
@@ -16,7 +18,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const companyId = await requireCompanyId()
+    const user = await requirePermission("rental.return")
+    const companyId = user.companyId
     const { id } = await params
     const body = await request.json()
     const data = returnSchema.parse(body)
@@ -26,6 +29,7 @@ export async function POST(
       include: {
         items: true,
         customer: true,
+        company: { select: { name: true } },
       },
     })
 
@@ -97,6 +101,36 @@ export async function POST(
       return updated
     })
 
+    // Webhook de saída + email de confirmação (ambos fire-and-forget)
+    void dispatchWebhooks({
+      companyId,
+      event: "rental.returned",
+      data: {
+        rentalId: rental.id,
+        contractNumber: rental.contractNumber,
+        customerId: rental.customerId,
+        returnedAt: now.toISOString(),
+        total: newTotal,
+        damage: !!data.damageCost,
+        damageCost: data.damageCost ?? 0,
+      },
+    })
+
+    // Email de confirmação de devolução (não-bloqueante)
+    if (rental.customer.email) {
+      const formatBRL = (n: number) =>
+        new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n)
+      sendTemplated(rental.customer.email, getRentalReturnedEmail, {
+        customerName: rental.customer.name,
+        contractNumber: rental.contractNumber,
+        returnDate: now.toLocaleDateString("pt-BR"),
+        total: formatBRL(newTotal),
+        hasDamage: !!data.damageCost && data.damageCost > 0,
+        damageValue: data.damageCost ? formatBRL(data.damageCost) : undefined,
+        companyName: rental.company.name,
+      }).catch((err) => console.error("[return] email failed:", err))
+    }
+
     return NextResponse.json(updatedRental)
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -105,8 +139,11 @@ export async function POST(
         { status: 400 }
       )
     }
-    if (error instanceof Error && error.message === "Não autorizado") {
-      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    if (error instanceof Error) {
+      const status = (error as Error & { status?: number }).status
+      if (error.message === "Não autorizado") return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+      if (status === 403 || error.message === "Acesso negado")
+        return NextResponse.json({ error: "Acesso negado" }, { status: 403 })
     }
     console.error("Error returning rental:", error)
     return NextResponse.json(

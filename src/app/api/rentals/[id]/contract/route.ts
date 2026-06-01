@@ -30,6 +30,18 @@ export async function GET(
       )
     }
 
+    // Resolve a URL absoluta da logo (Equipment.imageUrl/Company.logoUrl geralmente vem como path relativo).
+    // O renderer do react-pdf precisa de URL acessível (http/https) ou data: URL.
+    let absoluteLogoUrl: string | undefined
+    if (rental.company.logoUrl) {
+      if (/^https?:\/\//i.test(rental.company.logoUrl)) {
+        absoluteLogoUrl = rental.company.logoUrl
+      } else {
+        const baseUrl = process.env.NEXTAUTH_URL || new URL(request.url).origin
+        absoluteLogoUrl = baseUrl.replace(/\/$/, "") + rental.company.logoUrl
+      }
+    }
+
     // Preparar dados do contrato
     const contractData = {
       contractNumber: rental.contractNumber,
@@ -37,6 +49,12 @@ export async function GET(
       companyDocument: rental.company.document || undefined,
       companyAddress: rental.company.address || undefined,
       companyPhone: rental.company.phone || undefined,
+      companyLogoUrl: absoluteLogoUrl,
+      companyPrimaryColor: rental.company.primaryColor || "#2563EB",
+      customerSignatureUrl: rental.customerSignatureUrl || undefined,
+      customerSignedAt: rental.customerSignedAt
+        ? rental.customerSignedAt.toISOString()
+        : undefined,
       customerName: rental.customer.name,
       customerDocument: rental.customer.document,
       customerPhone: rental.customer.phone,

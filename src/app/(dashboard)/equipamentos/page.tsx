@@ -19,6 +19,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { SkeletonTable } from "@/components/ui/skeleton"
+import { useSavedFilters } from "@/hooks/use-saved-filters"
 import {
   Table,
   TableBody,
@@ -92,9 +94,18 @@ export default function EquipamentosPage() {
   const [equipment, setEquipment] = useState<Equipment[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState("")
-  const [categoryFilter, setCategoryFilter] = useState("all")
-  const [statusFilter, setStatusFilter] = useState("all")
+  // Filtros persistidos por usuário (localStorage) — preserva entre sessões
+  const [filters, setFilters] = useSavedFilters("equipamentos", {
+    search: "",
+    categoryFilter: "all" as string,
+    statusFilter: "all" as string,
+  })
+  const search = filters.search
+  const categoryFilter = filters.categoryFilter
+  const statusFilter = filters.statusFilter
+  const setSearch = (v: string) => setFilters((p) => ({ ...p, search: v }))
+  const setCategoryFilter = (v: string) => setFilters((p) => ({ ...p, categoryFilter: v }))
+  const setStatusFilter = (v: string) => setFilters((p) => ({ ...p, statusFilter: v }))
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null)
   const [saving, setSaving] = useState(false)
@@ -248,7 +259,27 @@ export default function EquipamentosPage() {
         const data = await response.json()
         throw new Error(data.error)
       }
-      toast.success("Equipamento desativado!")
+      toast.success("Equipamento desativado", {
+        description: "Você tem alguns segundos para desfazer.",
+        duration: 10000,
+        action: {
+          label: "Desfazer",
+          onClick: async () => {
+            try {
+              const undo = await fetch(`/api/equipment/${id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: "AVAILABLE" }),
+              })
+              if (!undo.ok) throw new Error()
+              toast.success("Equipamento reativado")
+              fetchData()
+            } catch {
+              toast.error("Não foi possível desfazer")
+            }
+          },
+        },
+      })
       fetchData()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Erro ao desativar")
@@ -285,11 +316,7 @@ export default function EquipamentosPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    )
+    return <SkeletonTable rows={8} />
   }
 
   return (

@@ -1,0 +1,71 @@
+# docker-compose.yml — stack completa em uma VM
+#
+# Sobe:
+#   - app (Next.js + Prisma)
+#   - postgres (banco)
+#   - nginx (reverse proxy + SSL termination)
+#
+# Uso em produção:
+#   docker compose up -d --build
+#
+# Pra dev local com hot reload, use `npm run dev` em vez disso.
+
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-locatech_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-locatech}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./backups:/backups
+    networks:
+      - locatech
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-locatech_app}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-locatech}?schema=public
+    networks:
+      - locatech
+    expose:
+      - "3000"
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/letsencrypt:ro
+      - ./public:/var/www/public:ro
+    networks:
+      - locatech
+
+networks:
+  locatech:
+    driver: bridge
+
+volumes:
+  postgres-data:

@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  validate:
+    name: Lint + Typecheck + Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Gera o client antes de typecheck porque o código importa tipos do @prisma/client
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Prisma validate (schema correto)
+        run: npx prisma validate
+
+      - name: Prisma format check
+        run: npx prisma format --check
+
+      # Quando houver pasta prisma/migrations, valida que o schema está em sync com elas.
+      # Sem migrations o passo só lista o conteúdo e passa.
+      - name: Validate migrations sync
+        run: |
+          if [ -d "prisma/migrations" ] && [ -n "$(ls -A prisma/migrations 2>/dev/null)" ]; then
+            echo "Checking migrations are in sync with schema..."
+            DIFF=$(npx prisma migrate diff \
+              --from-migrations ./prisma/migrations \
+              --to-schema-datamodel ./prisma/schema.prisma \
+              --shadow-database-url "file:./.shadow.db" \
+              --script || true)
+            if [ -n "$DIFF" ] && [ "$DIFF" != "-- This is an empty migration." ]; then
+              echo "::error::Schema diverged from migrations. Run 'npx prisma migrate dev' to create a new migration."
+              echo "Diff:"
+              echo "$DIFF"
+              exit 1
+            fi
+            echo "Migrations in sync."
+          else
+            echo "No migrations folder yet — skipping diff check."
+          fi
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: npm test -- --ci --reporters=default
+
+      - name: Build
+        run: npx next build
+        env:
+          # NextAuth precisa de algum valor pra build não quebrar em SSG
+          NEXTAUTH_SECRET: ci-build-secret-not-used-at-runtime
+          NEXTAUTH_URL: http://localhost:3000
+          # Dummy pra o Prisma reconhecer o provider — não conecta de verdade no CI
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci

@@ -23,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { SkeletonTable } from "@/components/ui/skeleton"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -416,11 +417,7 @@ export default function LocacoesPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex h-96 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    )
+    return <SkeletonTable rows={8} />
   }
 
   return (
@@ -654,6 +651,35 @@ export default function LocacoesPage() {
                             <DropdownMenuItem onClick={() => handleUpdatePayment(rental, "PAID")}>
                               <DollarSign className="mr-2 h-4 w-4" />
                               Registrar Pagamento
+                            </DropdownMenuItem>
+                          )}
+                          {["RETURNED", "COMPLETED"].includes(rental.status) && (
+                            <DropdownMenuItem
+                              onClick={async () => {
+                                try {
+                                  const r = await fetch(`/api/rentals/${rental.id}/invoice`, {
+                                    method: "POST",
+                                  })
+                                  const j = await r.json().catch(() => ({}))
+                                  if (r.status === 402) {
+                                    toast.error("Emissão de NF disponível só nos planos Starter/Pro")
+                                    return
+                                  }
+                                  if (r.status === 409) {
+                                    toast.info(j.error || "Nota já existe")
+                                    return
+                                  }
+                                  if (!r.ok) throw new Error(j.error || j.detail || "Falha")
+                                  toast.success(
+                                    `Nota emitida${j.number ? ` (#${j.number})` : ""}. Veja em /notas.`
+                                  )
+                                } catch (err) {
+                                  toast.error(err instanceof Error ? err.message : "Erro")
+                                }
+                              }}
+                            >
+                              <FileText className="mr-2 h-4 w-4" />
+                              Emitir Nota Fiscal
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuSeparator />

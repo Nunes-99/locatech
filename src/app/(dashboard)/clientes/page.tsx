@@ -24,6 +24,8 @@ import { Label } from "@/components/ui/label"
 import { MaskedInput } from "@/components/ui/masked-input"
 import { validateDocument } from "@/lib/validators"
 import { Badge } from "@/components/ui/badge"
+import { SkeletonTable } from "@/components/ui/skeleton"
+import { useSavedFilters } from "@/hooks/use-saved-filters"
 import {
   Table,
   TableBody,
@@ -91,8 +93,14 @@ function getCreditBadge(score: string) {
 export default function ClientesPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState("")
-  const [creditFilter, setCreditFilter] = useState("all")
+  const [filters, setFilters] = useSavedFilters("clientes", {
+    search: "",
+    creditFilter: "all" as string,
+  })
+  const search = filters.search
+  const creditFilter = filters.creditFilter
+  const setSearch = (v: string) => setFilters((p) => ({ ...p, search: v }))
+  const setCreditFilter = (v: string) => setFilters((p) => ({ ...p, creditFilter: v }))
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [saving, setSaving] = useState(false)
@@ -212,7 +220,27 @@ export default function ClientesPage() {
         const data = await response.json()
         throw new Error(data.error)
       }
-      toast.success("Cliente removido!")
+      toast.success("Cliente removido", {
+        description: "Você tem alguns segundos para desfazer.",
+        duration: 10000,
+        action: {
+          label: "Desfazer",
+          onClick: async () => {
+            try {
+              const undo = await fetch(`/api/customers/${id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ isBlocked: false, blockReason: null }),
+              })
+              if (!undo.ok) throw new Error()
+              toast.success("Remoção desfeita")
+              fetchData()
+            } catch {
+              toast.error("Não foi possível desfazer")
+            }
+          },
+        },
+      })
       fetchData()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Erro ao remover")
@@ -248,11 +276,8 @@ export default function ClientesPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    )
+    return <SkeletonTable rows={8} />
+    // (loader original substituído por skeleton)
   }
 
   return (

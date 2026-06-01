@@ -23,7 +23,7 @@ export async function GET(
     const { id } = await params
 
     const maintenance = await prisma.maintenance.findFirst({
-      where: { id, companyId },
+      where: { id, companyId, deletedAt: null },
       include: {
         equipment: {
           select: {
@@ -68,7 +68,7 @@ export async function PUT(
     const data = updateMaintenanceSchema.parse(body)
 
     const existing = await prisma.maintenance.findFirst({
-      where: { id, companyId },
+      where: { id, companyId, deletedAt: null },
       include: { equipment: true },
     })
 
@@ -156,7 +156,7 @@ export async function DELETE(
     const { id } = await params
 
     const existing = await prisma.maintenance.findFirst({
-      where: { id, companyId },
+      where: { id, companyId, deletedAt: null },
     })
 
     if (!existing) {
@@ -174,8 +174,10 @@ export async function DELETE(
       )
     }
 
-    await prisma.maintenance.delete({
+    // Soft delete: preserva histórico
+    await prisma.maintenance.update({
       where: { id },
+      data: { deletedAt: new Date() },
     })
 
     return NextResponse.json({ message: "Manutencao excluida com sucesso" })

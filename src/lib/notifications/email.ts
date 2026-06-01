@@ -198,6 +198,220 @@ export function getOverdueNotificationEmail(data: {
   }
 }
 
+// Wrapper estilo template-name → permite enviar em uma chamada só
+type TemplateBuilder<T> = (data: T) => { subject: string; html: string }
+
+export async function sendTemplated<T>(
+  to: string,
+  builder: TemplateBuilder<T>,
+  data: T
+) {
+  const { subject, html } = builder(data)
+  return sendEmail({ to, subject, html })
+}
+
+/**
+ * Branding opcional injetado nos templates de email.
+ * Cada chamador pode passar `branding` pra customizar com a identidade da locadora.
+ */
+export interface EmailBranding {
+  /** Hex do header. Default azul institucional. */
+  headerColor?: string
+  /** URL absoluta da logo (PNG/JPG). Se ausente, mostra apenas o título. */
+  logoUrl?: string
+}
+
+function shell(
+  defaultHeaderColor: string,
+  title: string,
+  inner: string,
+  footer: string,
+  branding?: EmailBranding
+) {
+  const headerColor = branding?.headerColor || defaultHeaderColor
+  const logo = branding?.logoUrl
+    ? `<img src="${branding.logoUrl}" alt="" style="max-height: 56px; max-width: 200px; margin-bottom: 8px; display: inline-block;" />`
+    : ""
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: ${headerColor}; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; background: #f9fafb; }
+        .footer { padding: 20px; text-align: center; font-size: 12px; color: #666; }
+        .box { padding: 15px; border-radius: 8px; margin: 15px 0; }
+        .button { display: inline-block; background: ${headerColor}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 16px 0; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">${logo}<h1 style="margin: 0;">${title}</h1></div>
+        <div class="content">${inner}</div>
+        <div class="footer">${footer}</div>
+      </div>
+    </body>
+    </html>
+  `
+}
+
+export function getPasswordResetEmail(data: {
+  userName: string
+  resetLink: string
+  companyName?: string
+}) {
+  const company = data.companyName ?? "LocaTech"
+  return {
+    subject: `Redefinição de senha - ${company}`,
+    html: shell(
+      "#2563eb",
+      company,
+      `
+        <h2>Olá, ${data.userName}!</h2>
+        <p>Recebemos uma solicitação para redefinir a senha da sua conta.</p>
+        <p style="text-align: center;">
+          <a href="${data.resetLink}" class="button">Redefinir Senha</a>
+        </p>
+        <p><strong>Este link expira em 1 hora.</strong></p>
+        <p>Se você não solicitou, ignore este e-mail.</p>
+      `,
+      `<p>Este é um e-mail automático. Por favor, não responda.</p><p>${company}</p>`
+    ),
+  }
+}
+
+export function getEmailVerifyEmail(data: {
+  userName: string
+  verifyLink: string
+  companyName?: string
+}) {
+  const company = data.companyName ?? "LocaTech"
+  return {
+    subject: `Confirme seu email — ${company}`,
+    html: shell(
+      "#10b981",
+      "Confirme seu email",
+      `
+        <h2>Olá, ${data.userName}!</h2>
+        <p>Pra ativar sua conta, confirme seu endereço de email clicando no botão abaixo:</p>
+        <p style="text-align: center;">
+          <a href="${data.verifyLink}" class="button">Confirmar meu email</a>
+        </p>
+        <p><strong>Este link expira em 24 horas.</strong></p>
+        <p>Se você não criou conta no LocaTech, ignore este email.</p>
+      `,
+      `<p>${company}</p>`
+    ),
+  }
+}
+
+export function getWelcomeEmail(data: {
+  userName: string
+  companyName: string
+  loginUrl: string
+}) {
+  return {
+    subject: `Bem-vindo(a) ao ${data.companyName}!`,
+    html: shell(
+      "#10b981",
+      "Bem-vindo!",
+      `
+        <h2>Olá, ${data.userName}!</h2>
+        <p>Seu cadastro foi concluído com sucesso. Agora você pode acessar o sistema e começar a gerenciar a sua locadora.</p>
+        <p style="text-align:center;">
+          <a href="${data.loginUrl}" class="button">Acessar o Sistema</a>
+        </p>
+        <p>Bom trabalho!</p>
+      `,
+      `<p>${data.companyName}</p>`
+    ),
+  }
+}
+
+export function getRentalReturnedEmail(data: {
+  customerName: string
+  contractNumber: number
+  returnDate: string
+  total: string
+  hasDamage: boolean
+  damageValue?: string
+  companyName: string
+}) {
+  return {
+    subject: `Devolução concluída - Contrato #${data.contractNumber}`,
+    html: shell(
+      "#10b981",
+      "Devolução Confirmada",
+      `
+        <h2>Olá, ${data.customerName}!</h2>
+        <p>A devolução do contrato <strong>#${data.contractNumber}</strong> foi registrada em ${data.returnDate}.</p>
+        <div class="box" style="background: #d1fae5;">
+          <strong>Valor total:</strong> ${data.total}
+          ${data.hasDamage ? `<br><strong>Valor por danos:</strong> ${data.damageValue ?? "-"}` : ""}
+        </div>
+        <p>Agradecemos a preferência!</p>
+      `,
+      `<p>${data.companyName}</p>`
+    ),
+  }
+}
+
+export function getInvoiceIssuedEmail(data: {
+  customerName: string
+  contractNumber: number
+  invoiceNumber: string
+  amount: string
+  pdfUrl?: string
+  xmlUrl?: string
+  companyName: string
+}) {
+  return {
+    subject: `Nota fiscal #${data.invoiceNumber} — ${data.companyName}`,
+    html: shell(
+      "#0ea5e9",
+      "Nota Fiscal Emitida",
+      `
+        <h2>Olá, ${data.customerName}!</h2>
+        <p>A nota fiscal referente ao contrato <strong>#${data.contractNumber}</strong> foi emitida.</p>
+        <div class="box" style="background: #e0f2fe;">
+          <strong>Número:</strong> ${data.invoiceNumber}<br>
+          <strong>Valor:</strong> ${data.amount}
+        </div>
+        ${data.pdfUrl ? `<p style="text-align:center;"><a href="${data.pdfUrl}" class="button">Baixar PDF da nota</a></p>` : ""}
+        ${data.xmlUrl ? `<p style="text-align:center;"><a href="${data.xmlUrl}" style="color:#0ea5e9; text-decoration:underline;">Baixar XML</a></p>` : ""}
+        <p>Guarde a nota para sua contabilidade.</p>
+      `,
+      `<p>${data.companyName}</p>`
+    ),
+  }
+}
+
+export function getDepositReturnedEmail(data: {
+  customerName: string
+  contractNumber: number
+  depositAmount: string
+  companyName: string
+}) {
+  return {
+    subject: `Caução devolvida - Contrato #${data.contractNumber}`,
+    html: shell(
+      "#0ea5e9",
+      "Caução Devolvida",
+      `
+        <h2>Olá, ${data.customerName}!</h2>
+        <p>A caução do contrato <strong>#${data.contractNumber}</strong> foi devolvida.</p>
+        <div class="box" style="background: #dbeafe;">
+          <strong>Valor:</strong> ${data.depositAmount}
+        </div>
+        <p>Caso tenha dúvidas, entre em contato.</p>
+      `,
+      `<p>${data.companyName}</p>`
+    ),
+  }
+}
+
 export function getMaintenanceAlertEmail(data: {
   userName: string
   equipmentCode: string

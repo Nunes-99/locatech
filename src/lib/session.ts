@@ -1,12 +1,13 @@
 import { getServerSession } from "next-auth"
 import { authOptions } from "./auth"
 import { prisma } from "./prisma"
+import { canPerform, Permission, Role } from "./permissions"
 
 export interface SessionUser {
   id: string
   name: string
   email: string
-  role: string
+  role: Role
   companyId: string
   companyName: string
 }
@@ -45,6 +46,18 @@ export async function requireRole(roles: string[]): Promise<SessionUser> {
 
   if (!roles.includes(user.role)) {
     throw new Error("Acesso negado")
+  }
+
+  return user
+}
+
+export async function requirePermission(permission: Permission): Promise<SessionUser> {
+  const user = await requireAuth()
+
+  if (!canPerform(user.role, permission)) {
+    const err = new Error("Acesso negado")
+    ;(err as Error & { status?: number }).status = 403
+    throw err
   }
 
   return user

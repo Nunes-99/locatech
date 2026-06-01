@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireCompanyId } from "@/lib/session"
+import { requireCompanyId, requirePermission } from "@/lib/session"
 import { z } from "zod"
 
 const updateSettingsSchema = z.object({
@@ -16,7 +16,22 @@ const updateSettingsSchema = z.object({
   primaryColor: z.string().optional(),
   lateFeePercent: z.number().min(0).max(100).optional(),
   defaultRentalDays: z.number().int().min(1).optional(),
+  quoteValidDays: z.number().int().min(1).max(90).optional(),
   workingHours: z.any().optional(),
+  // LGPD
+  dpoEmail: z.string().email().optional().nullable(),
+  dpoName: z.string().optional().nullable(),
+  // Catálogo público
+  slug: z
+    .string()
+    .regex(/^[a-z0-9-]+$/, "Slug aceita apenas letras minúsculas, números e hífens")
+    .min(3)
+    .max(50)
+    .optional()
+    .nullable(),
+  publicCatalog: z.boolean().optional(),
+  catalogHeadline: z.string().max(200).optional().nullable(),
+  whatsappContact: z.string().optional().nullable(),
 })
 
 export async function GET() {
@@ -39,9 +54,16 @@ export async function GET() {
         primaryColor: true,
         lateFeePercent: true,
         defaultRentalDays: true,
+        quoteValidDays: true,
         workingHours: true,
         plan: true,
         planExpiresAt: true,
+        dpoEmail: true,
+        dpoName: true,
+        slug: true,
+        publicCatalog: true,
+        catalogHeadline: true,
+        whatsappContact: true,
       },
     })
 
@@ -64,7 +86,8 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   try {
-    const companyId = await requireCompanyId()
+    const user = await requirePermission("company.update")
+    const companyId = user.companyId
     const body = await request.json()
     const data = updateSettingsSchema.parse(body)
 
@@ -87,8 +110,11 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       )
     }
-    if (error instanceof Error && error.message === "Não autorizado") {
-      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    if (error instanceof Error) {
+      const status = (error as Error & { status?: number }).status
+      if (error.message === "Não autorizado") return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+      if (status === 403 || error.message === "Acesso negado")
+        return NextResponse.json({ error: "Acesso negado" }, { status: 403 })
     }
     return NextResponse.json(
       { error: "Erro ao atualizar configurações" },

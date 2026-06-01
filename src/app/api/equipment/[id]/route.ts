@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireCompanyId } from "@/lib/session"
+import { requireCompanyId, requirePermission } from "@/lib/session"
 import { z } from "zod"
+import { Prisma } from "@prisma/client"
+
+function unauthorizedResponse(error: Error) {
+  const status = (error as Error & { status?: number }).status
+  if (error.message === "Não autorizado") return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+  if (status === 403 || error.message === "Acesso negado")
+    return NextResponse.json({ error: "Acesso negado" }, { status: 403 })
+  return null
+}
 
 const updateEquipmentSchema = z.object({
   categoryId: z.string().uuid().optional(),
@@ -74,7 +83,8 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const companyId = await requireCompanyId()
+    const user = await requirePermission("equipment.update")
+    const companyId = user.companyId
     const { id } = await params
     const body = await request.json()
     const data = updateEquipmentSchema.parse(body)
@@ -117,6 +127,37 @@ export async function PUT(
       },
     })
 
+    // Histórico de preços: registra mudanças em dailyRate/weeklyRate/monthlyRate
+    const priceChanged =
+      (data.dailyRate !== undefined && !existing.dailyRate.equals(new Prisma.Decimal(data.dailyRate))) ||
+      (data.weeklyRate !== undefined &&
+        !(existing.weeklyRate ?? new Prisma.Decimal(0)).equals(new Prisma.Decimal(data.weeklyRate ?? 0))) ||
+      (data.monthlyRate !== undefined &&
+        !(existing.monthlyRate ?? new Prisma.Decimal(0)).equals(new Prisma.Decimal(data.monthlyRate ?? 0)))
+
+    if (priceChanged) {
+      await prisma.equipmentPriceHistory.create({
+        data: {
+          companyId,
+          equipmentId: id,
+          oldDailyRate: existing.dailyRate,
+          newDailyRate: data.dailyRate !== undefined ? new Prisma.Decimal(data.dailyRate) : existing.dailyRate,
+          oldWeeklyRate: existing.weeklyRate,
+          newWeeklyRate:
+            data.weeklyRate !== undefined && data.weeklyRate !== null
+              ? new Prisma.Decimal(data.weeklyRate)
+              : existing.weeklyRate,
+          oldMonthlyRate: existing.monthlyRate,
+          newMonthlyRate:
+            data.monthlyRate !== undefined && data.monthlyRate !== null
+              ? new Prisma.Decimal(data.monthlyRate)
+              : existing.monthlyRate,
+          changedBy: user.id,
+          changedByName: user.name,
+        },
+      })
+    }
+
     return NextResponse.json(equipment)
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -125,8 +166,9 @@ export async function PUT(
         { status: 400 }
       )
     }
-    if (error instanceof Error && error.message === "Não autorizado") {
-      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    if (error instanceof Error) {
+      const r = unauthorizedResponse(error)
+      if (r) return r
     }
     console.error("Error updating equipment:", error)
     return NextResponse.json(
@@ -141,7 +183,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const companyId = await requireCompanyId()
+    const user = await requirePermission("equipment.delete")
+    const companyId = user.companyId
     const { id } = await params
 
     const existing = await prisma.equipment.findFirst({
@@ -178,8 +221,9 @@ export async function DELETE(
 
     return NextResponse.json({ message: "Equipamento desativado com sucesso" })
   } catch (error) {
-    if (error instanceof Error && error.message === "Não autorizado") {
-      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    if (error instanceof Error) {
+      const r = unauthorizedResponse(error)
+      if (r) return r
     }
     console.error("Error deleting equipment:", error)
     return NextResponse.json(

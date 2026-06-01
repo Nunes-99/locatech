@@ -16,6 +16,8 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  ShieldCheck,
+  TrendingUp,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -32,8 +34,12 @@ const menuItems = [
   { href: "/locacoes", label: "Locações", icon: ClipboardList },
   { href: "/calendario", label: "Calendário", icon: Calendar },
   { href: "/manutencoes", label: "Manutenções", icon: Wrench },
+  { href: "/lucro", label: "Lucro", icon: TrendingUp },
   { href: "/relatorios", label: "Relatórios", icon: BarChart3 },
   { href: "/usuarios", label: "Usuários", icon: UserCog },
+  { href: "/lojas", label: "Lojas", icon: Building2 },
+  { href: "/seguranca", label: "Segurança", icon: ShieldCheck },
+  { href: "/auditoria", label: "Auditoria", icon: ShieldCheck },
   { href: "/configuracoes", label: "Configurações", icon: Settings },
 ]
 

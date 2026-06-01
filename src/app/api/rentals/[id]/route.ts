@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireCompanyId } from "@/lib/session"
+import { maybeAutoIssue } from "@/lib/invoices/issue"
 import { z } from "zod"
 
 const updateRentalSchema = z.object({
@@ -21,7 +22,7 @@ export async function GET(
     const { id } = await params
 
     const rental = await prisma.rental.findFirst({
-      where: { id, companyId },
+      where: { id, companyId, deletedAt: null },
       include: {
         customer: true,
         items: {
@@ -105,6 +106,11 @@ export async function PUT(
 
       return updated
     })
+
+    // Se pagamento foi marcado como PAID, dispara auto-emit (idempotente)
+    if (data.paymentStatus === "PAID" && existing.paymentStatus !== "PAID") {
+      void maybeAutoIssue(rental.id, companyId)
+    }
 
     return NextResponse.json(rental)
   } catch (error) {

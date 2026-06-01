@@ -296,17 +296,60 @@ export default function AdminPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
-                            <Eye className="mr-2 h-4 w-4" />
-                            Ver detalhes
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={async () => {
+                              const newPlan = prompt(
+                                `Alterar plano de "${company.name}" para FREE, STARTER ou PRO:`,
+                                company.plan
+                              )
+                              if (!newPlan) return
+                              const upper = newPlan.toUpperCase()
+                              if (!["FREE", "STARTER", "PRO"].includes(upper)) {
+                                toast.error("Plano inválido")
+                                return
+                              }
+                              try {
+                                const res = await fetch(`/api/admin/companies/${company.id}`, {
+                                  method: "PATCH",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ plan: upper }),
+                                })
+                                if (!res.ok) throw new Error()
+                                toast.success(`Plano alterado para ${upper}`)
+                                fetchData()
+                              } catch {
+                                toast.error("Falha ao alterar plano")
+                              }
+                            }}
+                          >
                             <TrendingUp className="mr-2 h-4 w-4" />
                             Alterar plano
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="text-red-600">
+                          <DropdownMenuItem
+                            className="text-red-600"
+                            onClick={async () => {
+                              if (
+                                !confirm(
+                                  `Suspender "${company.name}"? Todos os usuários serão desconectados imediatamente.`
+                                )
+                              )
+                                return
+                              try {
+                                const res = await fetch(`/api/admin/companies/${company.id}`, {
+                                  method: "PATCH",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ suspend: true }),
+                                })
+                                if (!res.ok) throw new Error()
+                                toast.success("Empresa suspensa — sessões revogadas")
+                                fetchData()
+                              } catch {
+                                toast.error("Falha ao suspender")
+                              }
+                            }}
+                          >
                             <AlertTriangle className="mr-2 h-4 w-4" />
-                            Suspender
+                            Suspender (revogar sessões)
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>

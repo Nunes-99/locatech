@@ -5,10 +5,12 @@ import {
   Page,
   Text,
   View,
+  Image,
   StyleSheet,
 } from "@react-pdf/renderer"
 
-const styles = StyleSheet.create({
+function makeStyles(primaryColor: string) {
+  return StyleSheet.create({
   page: {
     padding: 40,
     fontSize: 10,
@@ -18,10 +20,21 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlign: "center",
   },
+  headerLogoRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  logo: {
+    width: 80,
+    height: 80,
+    objectFit: "contain",
+  },
   title: {
     fontSize: 18,
     fontWeight: "bold",
     marginBottom: 5,
+    color: primaryColor,
   },
   subtitle: {
     fontSize: 12,
@@ -32,6 +45,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "bold",
     marginBottom: 20,
+    color: primaryColor,
   },
   section: {
     marginBottom: 15,
@@ -42,7 +56,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     paddingBottom: 4,
     borderBottomWidth: 1,
-    borderBottomColor: "#ccc",
+    borderBottomColor: primaryColor,
+    color: primaryColor,
   },
   row: {
     flexDirection: "row",
@@ -161,7 +176,8 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: "#999",
   },
-})
+  })
+}
 
 interface RentalItem {
   equipmentCode: string
@@ -177,6 +193,13 @@ interface RentalContractData {
   companyDocument?: string
   companyAddress?: string
   companyPhone?: string
+  /** URL absoluta da logo (PNG/JPG); o renderer baixa e embute no PDF. */
+  companyLogoUrl?: string
+  /** Hex (#RRGGBB) usado em títulos e bordas das seções. */
+  companyPrimaryColor?: string
+  /** Data URL ou URL absoluta da assinatura do cliente (PNG). Se presente, embute. */
+  customerSignatureUrl?: string
+  customerSignedAt?: string
   customerName: string
   customerDocument: string
   customerPhone: string
@@ -206,12 +229,19 @@ function formatDate(dateStr: string): string {
 
 export function RentalContractPDF({ data }: { data: RentalContractData }) {
   const today = new Date().toLocaleDateString("pt-BR")
+  const styles = makeStyles(data.companyPrimaryColor || "#2563EB")
 
   return (
     <Document>
       <Page size="A4" style={styles.page}>
         {/* Header */}
         <View style={styles.header}>
+          {data.companyLogoUrl ? (
+            <View style={styles.headerLogoRow}>
+              {/* eslint-disable-next-line jsx-a11y/alt-text */}
+              <Image src={data.companyLogoUrl} style={styles.logo} />
+            </View>
+          ) : null}
           <Text style={styles.title}>{data.companyName}</Text>
           <Text style={styles.subtitle}>Sistema de Locacao de Equipamentos</Text>
           <Text style={styles.contractNumber}>
@@ -376,10 +406,29 @@ export function RentalContractPDF({ data }: { data: RentalContractData }) {
             </View>
           </View>
           <View style={styles.signatureBox}>
-            <View style={styles.signatureLine}>
-              <Text style={styles.signatureName}>{data.customerName}</Text>
-              <Text style={styles.signatureRole}>LOCATARIO</Text>
-            </View>
+            {data.customerSignatureUrl ? (
+              <View style={{ alignItems: "center" }}>
+                {/* eslint-disable-next-line jsx-a11y/alt-text */}
+                <Image
+                  src={data.customerSignatureUrl}
+                  style={{ width: 160, height: 60, objectFit: "contain" }}
+                />
+                <View style={{ borderTopWidth: 1, borderTopColor: "#000", paddingTop: 4, width: 200 }}>
+                  <Text style={styles.signatureName}>{data.customerName}</Text>
+                  <Text style={styles.signatureRole}>
+                    LOCATARIO
+                    {data.customerSignedAt
+                      ? ` — assinado em ${new Date(data.customerSignedAt).toLocaleDateString("pt-BR")}`
+                      : ""}
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.signatureLine}>
+                <Text style={styles.signatureName}>{data.customerName}</Text>
+                <Text style={styles.signatureRole}>LOCATARIO</Text>
+              </View>
+            )}
           </View>
         </View>
 

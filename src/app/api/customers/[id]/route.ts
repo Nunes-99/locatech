@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireCompanyId } from "@/lib/session"
+import { requireCompanyId, requirePermission } from "@/lib/session"
 import { z } from "zod"
+
+function authErrorResponse(error: Error): NextResponse | null {
+  const status = (error as Error & { status?: number }).status
+  if (error.message === "Não autorizado") return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+  if (status === 403 || error.message === "Acesso negado")
+    return NextResponse.json({ error: "Acesso negado" }, { status: 403 })
+  return null
+}
 
 const updateCustomerSchema = z.object({
   name: z.string().min(1).optional(),
@@ -70,10 +78,22 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const companyId = await requireCompanyId()
+    const user = await requirePermission("customer.update")
+    const companyId = user.companyId
     const { id } = await params
     const body = await request.json()
     const data = updateCustomerSchema.parse(body)
+
+    // Bloquear cliente requer permissão extra
+    if (data.isBlocked !== undefined) {
+      const blockUser = await requirePermission("customer.block").catch(() => null)
+      if (!blockUser) {
+        return NextResponse.json(
+          { error: "Sem permissão para bloquear/desbloquear clientes" },
+          { status: 403 }
+        )
+      }
+    }
 
     const existing = await prisma.customer.findFirst({
       where: { id, companyId },
@@ -118,8 +138,9 @@ export async function PUT(
         { status: 400 }
       )
     }
-    if (error instanceof Error && error.message === "Não autorizado") {
-      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    if (error instanceof Error) {
+      const r = authErrorResponse(error)
+      if (r) return r
     }
     console.error("Error updating customer:", error)
     return NextResponse.json(
@@ -134,7 +155,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const companyId = await requireCompanyId()
+    const user = await requirePermission("customer.delete")
+    const companyId = user.companyId
     const { id } = await params
 
     const existing = await prisma.customer.findFirst({
@@ -170,8 +192,9 @@ export async function DELETE(
 
     return NextResponse.json({ message: "Cliente removido com sucesso" })
   } catch (error) {
-    if (error instanceof Error && error.message === "Não autorizado") {
-      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    if (error instanceof Error) {
+      const r = authErrorResponse(error)
+      if (r) return r
     }
     console.error("Error deleting customer:", error)
     return NextResponse.json(

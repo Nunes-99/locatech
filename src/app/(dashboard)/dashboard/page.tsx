@@ -16,6 +16,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { OnboardingChecklist } from "@/components/onboarding/checklist"
 
 // Dados simulados
 const stats = {
@@ -125,6 +126,8 @@ function getStatusBadge(status: string) {
 export default function DashboardPage() {
   return (
     <div className="space-y-6">
+      <OnboardingChecklist />
+
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>

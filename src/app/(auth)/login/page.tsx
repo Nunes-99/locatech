@@ -4,7 +4,7 @@ import { useState } from "react"
 import { signIn } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { Wrench, Eye, EyeOff } from "lucide-react"
+import { Wrench, Eye, EyeOff, ShieldCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,9 +14,11 @@ export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [totpCode, setTotpCode] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [needsTotp, setNeedsTotp] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -27,11 +29,18 @@ export default function LoginPage() {
       const result = await signIn("credentials", {
         email,
         password,
+        totpCode: needsTotp ? totpCode : undefined,
         redirect: false,
       })
 
       if (result?.error) {
-        setError(result.error)
+        // Server sinaliza "TOTP_REQUIRED" quando 2FA tá ativa mas código não veio
+        if (result.error === "TOTP_REQUIRED") {
+          setNeedsTotp(true)
+          setError("")
+        } else {
+          setError(result.error)
+        }
       } else {
         router.push("/dashboard")
         router.refresh()
@@ -113,8 +122,30 @@ export default function LoginPage() {
               </div>
             </div>
 
+            {needsTotp && (
+              <div className="space-y-2 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:bg-blue-950/30">
+                <Label htmlFor="totp" className="flex items-center gap-1">
+                  <ShieldCheck className="h-4 w-4" /> Código 2FA
+                </Label>
+                <Input
+                  id="totp"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="6 dígitos do app autenticador"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value)}
+                  autoFocus
+                  autoComplete="one-time-code"
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Ou use um código de backup (8 caracteres).
+                </p>
+              </div>
+            )}
+
             <Button type="submit" className="w-full" loading={loading}>
-              Entrar
+              {needsTotp ? "Confirmar código" : "Entrar"}
             </Button>
 
             <div className="text-center text-sm text-muted-foreground">

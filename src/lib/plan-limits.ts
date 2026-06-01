@@ -13,6 +13,7 @@ export const PLAN_LIMITS = {
       exportExcel: false,
       customBranding: false,
       api: false,
+      invoices: false,
     },
   },
   STARTER: {
@@ -27,6 +28,7 @@ export const PLAN_LIMITS = {
       exportExcel: true,
       customBranding: false,
       api: false,
+      invoices: true,
     },
   },
   PRO: {
@@ -41,6 +43,7 @@ export const PLAN_LIMITS = {
       exportExcel: true,
       customBranding: true,
       api: true,
+      invoices: true,
     },
   },
 } as const

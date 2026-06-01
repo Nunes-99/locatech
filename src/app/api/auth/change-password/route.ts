@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getSession } from "@/lib/session"
+import { checkPasswordStrength } from "@/lib/validators"
 import { z } from "zod"
 import bcrypt from "bcryptjs"
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z.string().min(6),
+  newPassword: z.string().min(8),
 })
 
 export async function POST(request: NextRequest) {
@@ -19,6 +20,14 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const { currentPassword, newPassword } = changePasswordSchema.parse(body)
+
+    const pwd = checkPasswordStrength(newPassword)
+    if (!pwd.ok) {
+      return NextResponse.json(
+        { error: pwd.errors.join(". ") },
+        { status: 400 }
+      )
+    }
 
     // Get user with password hash
     const user = await prisma.user.findUnique({

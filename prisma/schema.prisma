@@ -12,51 +12,73 @@ datasource db {
 // ============================================
 
 model Company {
-  id                String   @id @default(uuid())
+  id String @id @default(uuid())
 
   // Identificação
-  name              String
-  document          String?  @unique  // CNPJ (opcional no cadastro)
-  phone             String?
-  email             String?
+  name     String
+  document String? @unique // CNPJ (opcional no cadastro)
+  phone    String?
+  email    String?
+
+  /// Slug único pra URL pública do catálogo (ex: minha-locadora → /catalogo/minha-locadora)
+  /// Se null, a empresa optou por não expor catálogo publicamente.
+  slug            String? @unique
+  publicCatalog   Boolean @default(false)
+  catalogHeadline String? // texto curto exibido no topo (ex: "Aluguel de equipamentos pra obra")
+  whatsappContact String? // telefone E.164 pro botão "Reservar via WhatsApp"
 
   // Endereço
-  address           String?
-  city              String?
-  state             String?
-  zipCode           String?
+  address String?
+  city    String?
+  state   String?
+  zipCode String?
 
   // Configurações
   workingHours      Json?
-  defaultRentalDays Int      @default(1)
-  lateFeePercent    Decimal  @default(2) @db.Decimal(5, 2)  // % ao dia
+  defaultRentalDays Int     @default(1)
+  lateFeePercent    Decimal @default(2) @db.Decimal(5, 2) // % ao dia
+  quoteValidDays    Int     @default(7) // orçamentos expiram após X dias
+
+  // LGPD — contato do encarregado de proteção de dados (DPO) da locadora
+  dpoEmail String?
+  dpoName  String?
 
   // Personalização
-  logoUrl           String?
-  primaryColor      String   @default("#2563EB")
+  logoUrl      String?
+  primaryColor String  @default("#2563EB")
 
   // Plano
-  plan              CompanyPlan @default(FREE)
-  planExpiresAt     DateTime?
+  plan          CompanyPlan @default(FREE)
+  planExpiresAt DateTime?
 
   // Métricas
-  totalRentals      Int      @default(0)
-  totalRevenue      Decimal  @default(0) @db.Decimal(15, 2)
+  totalRentals Int     @default(0)
+  totalRevenue Decimal @default(0) @db.Decimal(15, 2)
 
   // Timestamps
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relacionamentos
-  users             User[]
-  categories        EquipmentCategory[]
-  equipment         Equipment[]
-  customers         Customer[]
-  rentals           Rental[]
-  maintenances      Maintenance[]
-  notifications     Notification[]
+  users         User[]
+  categories    EquipmentCategory[]
+  equipment     Equipment[]
+  customers     Customer[]
+  rentals       Rental[]
+  maintenances  Maintenance[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+  accessLogs    AccessLog[]
+  priceHistory  EquipmentPriceHistory[]
+  expenses      EquipmentExpense[]
+  webhooks      Webhook[]
+  apiKeys       ApiKey[]
+  taxConfig     CompanyTaxConfig?
+  invoices      Invoice[]
+  stores        Store[]
 
   @@index([document])
+  @@index([slug])
 }
 
 enum CompanyPlan {
@@ -70,30 +92,53 @@ enum CompanyPlan {
 // ============================================
 
 model User {
-  id                String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  companyId         String
-  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  email             String   @unique
-  passwordHash      String?
-  name              String
-  phone             String?
-  role              UserRole @default(OPERATOR)
+  email        String   @unique
+  passwordHash String?
+  name         String
+  phone        String?
+  role         UserRole @default(OPERATOR)
 
   // Auth
-  emailVerified     DateTime?
-  resetToken        String?
-  resetTokenExpiry  DateTime?
+  emailVerified    DateTime?
+  resetToken       String?
+  resetTokenExpiry DateTime?
+
+  // Verificação de email — token único enviado por email no cadastro
+  emailVerifyToken       String?   @unique
+  emailVerifyTokenExpiry DateTime?
+
+  // Aceite de termos (LGPD/legal)
+  termsAcceptedAt DateTime?
+  termsVersion    String?
+
+  // Sessões: ao revogar todas, atualizamos esse timestamp.
+  // Em cada request, comparamos com `iat` do JWT — tokens emitidos antes ficam inválidos.
+  tokensInvalidatedAt DateTime?
+
+  // 2FA TOTP — opcional. Quando ativado, login exige código de 6 dígitos.
+  // Secret guardado base32 (formato exigido pelo otplib). Em produção real,
+  // considerar cifrar em camada de aplicação com chave KMS.
+  totpSecret      String?
+  totpEnabledAt   DateTime?
+  /// Códigos de backup hex 8 chars, 1 por linha. Cada uso invalida o código.
+  totpBackupCodes String[]
 
   // Timestamps
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // NextAuth
   accounts          Account[]
   sessions          Session[]
   notifications     Notification[]
+  auditLogs         AuditLog[]
+  accessLogs        AccessLog[]
+  pushSubscriptions PushSubscription[]
 
   @@index([companyId])
   @@index([email])
@@ -149,21 +194,21 @@ model VerificationToken {
 // ============================================
 
 model EquipmentCategory {
-  id                String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  companyId         String
-  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  name              String
-  description       String?
-  icon              String?  // emoji ou nome do ícone
+  name        String
+  description String?
+  icon        String? // emoji ou nome do ícone
 
   // Timestamps
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relacionamentos
-  equipment         Equipment[]
+  equipment Equipment[]
 
   @@unique([companyId, name])
   @@index([companyId])
@@ -174,48 +219,54 @@ model EquipmentCategory {
 // ============================================
 
 model Equipment {
-  id                String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  companyId         String
-  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  categoryId        String
-  category          EquipmentCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   EquipmentCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  /// Filial em que o equipamento está alocado. null = compartilhado/sem filial.
+  storeId String?
+  store   Store?  @relation(fields: [storeId], references: [id], onDelete: SetNull)
 
   // Identificação
-  code              String   // AND-001, BET-001
-  name              String
-  brand             String?
-  model             String?
-  serialNumber      String?
-  description       String?
-  imageUrl          String?
+  code         String // AND-001, BET-001
+  name         String
+  brand        String?
+  model        String?
+  serialNumber String?
+  description  String?
+  imageUrl     String?
 
   // Preços
-  dailyRate         Decimal  @db.Decimal(10, 2)
-  weeklyRate        Decimal? @db.Decimal(10, 2)
-  monthlyRate       Decimal? @db.Decimal(10, 2)
-  depositAmount     Decimal? @db.Decimal(10, 2)
+  dailyRate     Decimal  @db.Decimal(10, 2)
+  weeklyRate    Decimal? @db.Decimal(10, 2)
+  monthlyRate   Decimal? @db.Decimal(10, 2)
+  depositAmount Decimal? @db.Decimal(10, 2)
 
   // Status
-  status            EquipmentStatus @default(AVAILABLE)
+  status EquipmentStatus @default(AVAILABLE)
 
   // Aquisição
-  purchaseDate      DateTime?
-  purchaseValue     Decimal? @db.Decimal(10, 2)
+  purchaseDate  DateTime?
+  purchaseValue Decimal?  @db.Decimal(10, 2)
 
   // Métricas
-  totalRentals      Int      @default(0)
-  totalRevenue      Decimal  @default(0) @db.Decimal(15, 2)
-  totalDaysRented   Int      @default(0)
+  totalRentals    Int     @default(0)
+  totalRevenue    Decimal @default(0) @db.Decimal(15, 2)
+  totalDaysRented Int     @default(0)
 
   // Timestamps
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relacionamentos
-  rentalItems       RentalItem[]
-  maintenances      Maintenance[]
+  rentalItems  RentalItem[]
+  maintenances Maintenance[]
+  priceHistory EquipmentPriceHistory[]
+  expenses     EquipmentExpense[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -224,11 +275,11 @@ model Equipment {
 }
 
 enum EquipmentStatus {
-  AVAILABLE     // Disponível
-  RENTED        // Locado
-  MAINTENANCE   // Em manutenção
-  RESERVED      // Reservado
-  RETIRED       // Baixado/Inativo
+  AVAILABLE // Disponível
+  RENTED // Locado
+  MAINTENANCE // Em manutenção
+  RESERVED // Reservado
+  RETIRED // Baixado/Inativo
 }
 
 // ============================================
@@ -236,44 +287,44 @@ enum EquipmentStatus {
 // ============================================
 
 model Customer {
-  id                String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  companyId         String
-  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   // Identificação
-  name              String
-  document          String   // CPF ou CNPJ
-  documentType      DocumentType @default(CPF)
-  phone             String
-  email             String?
+  name         String
+  document     String // CPF ou CNPJ
+  documentType DocumentType @default(CPF)
+  phone        String
+  email        String?
 
   // Endereço
-  address           String?
-  city              String?
-  state             String?
-  zipCode           String?
+  address String?
+  city    String?
+  state   String?
+  zipCode String?
 
   // Crédito
-  creditScore       CustomerCreditScore @default(REGULAR)
-  creditLimit       Decimal? @db.Decimal(10, 2)
-  notes             String?
+  creditScore CustomerCreditScore @default(REGULAR)
+  creditLimit Decimal?            @db.Decimal(10, 2)
+  notes       String?
 
   // Métricas
-  totalRentals      Int      @default(0)
-  totalSpent        Decimal  @default(0) @db.Decimal(15, 2)
-  totalPending      Decimal  @default(0) @db.Decimal(15, 2)
+  totalRentals Int     @default(0)
+  totalSpent   Decimal @default(0) @db.Decimal(15, 2)
+  totalPending Decimal @default(0) @db.Decimal(15, 2)
 
   // Status
-  isBlocked         Boolean  @default(false)
-  blockReason       String?
+  isBlocked   Boolean @default(false)
+  blockReason String?
 
   // Timestamps
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relacionamentos
-  rentals           Rental[]
+  rentals Rental[]
 
   @@unique([companyId, document])
   @@index([companyId])
@@ -298,64 +349,87 @@ enum CustomerCreditScore {
 // ============================================
 
 model Rental {
-  id                String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  companyId         String
-  company           Company  @relation(fields: [companyId], references: [id])
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
 
-  customerId        String
-  customer          Customer @relation(fields: [customerId], references: [id])
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  /// Filial onde a locação foi gerada. null = compartilhado/empresa toda.
+  storeId String?
+  store   Store?  @relation(fields: [storeId], references: [id], onDelete: SetNull)
 
   // Número do contrato
-  contractNumber    Int
+  contractNumber Int
 
   // Datas
-  startDate         DateTime
-  expectedEndDate   DateTime
-  actualEndDate     DateTime?
+  startDate       DateTime
+  expectedEndDate DateTime
+  actualEndDate   DateTime?
 
   // Status
-  status            RentalStatus @default(CONFIRMED)
+  status RentalStatus @default(CONFIRMED)
 
   // Tipo
-  type              RentalType @default(DELIVERY)
+  type RentalType @default(DELIVERY)
 
   // Endereço de entrega
-  deliveryAddress   String?
+  deliveryAddress String?
 
   // Valores
-  subtotal          Decimal  @db.Decimal(10, 2)
-  deliveryFee       Decimal  @default(0) @db.Decimal(10, 2)
-  discount          Decimal  @default(0) @db.Decimal(10, 2)
-  total             Decimal  @db.Decimal(10, 2)
+  subtotal    Decimal @db.Decimal(10, 2)
+  deliveryFee Decimal @default(0) @db.Decimal(10, 2)
+  discount    Decimal @default(0) @db.Decimal(10, 2)
+  total       Decimal @db.Decimal(10, 2)
 
   // Caução
-  depositAmount     Decimal  @default(0) @db.Decimal(10, 2)
-  depositPaid       Boolean  @default(false)
-  depositReturned   Boolean  @default(false)
+  depositAmount   Decimal @default(0) @db.Decimal(10, 2)
+  depositPaid     Boolean @default(false)
+  depositReturned Boolean @default(false)
 
   // Atraso
-  lateDays          Int      @default(0)
-  lateFee           Decimal  @default(0) @db.Decimal(10, 2)
+  lateDays Int     @default(0)
+  lateFee  Decimal @default(0) @db.Decimal(10, 2)
 
   // Pagamento
-  paymentStatus     PaymentStatus @default(PENDING)
-  paymentMethod     PaymentMethod?
-  paidAt            DateTime?
+  paymentStatus PaymentStatus  @default(PENDING)
+  paymentMethod PaymentMethod?
+  paidAt        DateTime?
 
   // Contrato
-  contractUrl       String?
+  contractUrl String?
 
   // Observações
-  notes             String?
-  internalNotes     String?
+  notes         String?
+  internalNotes String?
+
+  // Orçamento — quando expira, cron muda status pra CANCELLED
+  quoteExpiresAt DateTime?
+
+  // Tokens de check-in/check-out — gerados pelo operador, escaneados pelo cliente
+  // via QR code. Curta duração; após confirmar fica registrado em handoverConfirmedAt.
+  handoverToken          String?   @unique
+  handoverTokenExpiresAt DateTime?
+  handoverConfirmedAt    DateTime?
+  returnToken            String?   @unique
+  returnTokenExpiresAt   DateTime?
+  returnConfirmedAt      DateTime?
+
+  // Assinatura digital do cliente (data URL base64 ou path no storage)
+  customerSignatureUrl String?
+  customerSignedAt     DateTime?
+  customerSignedIp     String?
 
   // Timestamps
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   // Relacionamentos
-  items             RentalItem[]
+  items    RentalItem[]
+  invoices Invoice[]
 
   @@unique([companyId, contractNumber])
   @@index([companyId])
@@ -363,21 +437,23 @@ model Rental {
   @@index([status])
   @@index([startDate])
   @@index([expectedEndDate])
+  /// Query quente: cron late-fees + lista /locacoes filtrando ativas/atrasadas
+  @@index([companyId, status, expectedEndDate])
 }
 
 enum RentalStatus {
-  QUOTE         // Orçamento
-  CONFIRMED     // Confirmado
-  IN_PROGRESS   // Em andamento
-  OVERDUE       // Atrasado
-  RETURNED      // Devolvido
-  COMPLETED     // Concluído (pago)
-  CANCELLED     // Cancelado
+  QUOTE // Orçamento
+  CONFIRMED // Confirmado
+  IN_PROGRESS // Em andamento
+  OVERDUE // Atrasado
+  RETURNED // Devolvido
+  COMPLETED // Concluído (pago)
+  CANCELLED // Cancelado
 }
 
 enum RentalType {
-  DELIVERY      // Entrega
-  PICKUP        // Retirada
+  DELIVERY // Entrega
+  PICKUP // Retirada
 }
 
 enum PaymentStatus {
@@ -402,28 +478,28 @@ enum PaymentMethod {
 // ============================================
 
 model RentalItem {
-  id                String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  rentalId          String
-  rental            Rental   @relation(fields: [rentalId], references: [id], onDelete: Cascade)
+  rentalId String
+  rental   Rental @relation(fields: [rentalId], references: [id], onDelete: Cascade)
 
-  equipmentId       String
-  equipment         Equipment @relation(fields: [equipmentId], references: [id])
+  equipmentId String
+  equipment   Equipment @relation(fields: [equipmentId], references: [id])
 
   // Snapshot do equipamento
-  equipmentCode     String
-  equipmentName     String
-  dailyRate         Decimal  @db.Decimal(10, 2)
+  equipmentCode String
+  equipmentName String
+  dailyRate     Decimal @db.Decimal(10, 2)
 
   // Quantidades e valores
-  quantity          Int      @default(1)
-  days              Int
-  subtotal          Decimal  @db.Decimal(10, 2)
+  quantity Int     @default(1)
+  days     Int
+  subtotal Decimal @db.Decimal(10, 2)
 
   // Status na devolução
-  returnCondition   String?  // "OK", "Danificado", etc
-  damageNotes       String?
-  damageValue       Decimal  @default(0) @db.Decimal(10, 2)
+  returnCondition String? // "OK", "Danificado", etc
+  damageNotes     String?
+  damageValue     Decimal @default(0) @db.Decimal(10, 2)
 
   @@index([rentalId])
   @@index([equipmentId])
@@ -434,40 +510,41 @@ model RentalItem {
 // ============================================
 
 model Maintenance {
-  id                String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  companyId         String
-  company           Company  @relation(fields: [companyId], references: [id])
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
 
-  equipmentId       String
-  equipment         Equipment @relation(fields: [equipmentId], references: [id])
+  equipmentId String
+  equipment   Equipment @relation(fields: [equipmentId], references: [id])
 
   // Tipo
-  type              MaintenanceType
+  type MaintenanceType
 
   // Detalhes
-  title             String
-  description       String?
+  title       String
+  description String?
 
   // Custos
-  laborCost         Decimal  @default(0) @db.Decimal(10, 2)
-  partsCost         Decimal  @default(0) @db.Decimal(10, 2)
-  totalCost         Decimal  @db.Decimal(10, 2)
+  laborCost Decimal @default(0) @db.Decimal(10, 2)
+  partsCost Decimal @default(0) @db.Decimal(10, 2)
+  totalCost Decimal @db.Decimal(10, 2)
 
   // Agendamento
-  scheduledDate     DateTime?
-  startedAt         DateTime?
-  completedAt       DateTime?
+  scheduledDate DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
 
   // Status
-  status            MaintenanceStatus @default(SCHEDULED)
+  status MaintenanceStatus @default(SCHEDULED)
 
   // Observações
-  notes             String?
+  notes String?
 
   // Timestamps
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   @@index([companyId])
   @@index([equipmentId])
@@ -476,16 +553,16 @@ model Maintenance {
 }
 
 enum MaintenanceType {
-  PREVENTIVE    // Preventiva
-  CORRECTIVE    // Corretiva
-  INSPECTION    // Inspeção
+  PREVENTIVE // Preventiva
+  CORRECTIVE // Corretiva
+  INSPECTION // Inspeção
 }
 
 enum MaintenanceStatus {
-  SCHEDULED     // Agendada
-  IN_PROGRESS   // Em andamento
-  COMPLETED     // Concluída
-  CANCELLED     // Cancelada
+  SCHEDULED // Agendada
+  IN_PROGRESS // Em andamento
+  COMPLETED // Concluída
+  CANCELLED // Cancelada
 }
 
 // ============================================
@@ -493,27 +570,29 @@ enum MaintenanceStatus {
 // ============================================
 
 model Notification {
-  id                String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  companyId         String
-  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  userId            String?  // null = for all users in company
-  user              User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String? // null = for all users in company
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  title             String
-  message           String
-  type              NotificationType @default(INFO)
-  link              String?
+  title   String
+  message String
+  type    NotificationType @default(INFO)
+  link    String?
 
-  read              Boolean  @default(false)
-  readAt            DateTime?
+  read   Boolean   @default(false)
+  readAt DateTime?
 
-  createdAt         DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([companyId])
   @@index([userId])
   @@index([read])
+  /// Query quente: dropdown de notificações por user
+  @@index([userId, read, createdAt])
 }
 
 enum NotificationType {
@@ -521,4 +600,498 @@ enum NotificationType {
   WARNING
   ERROR
   SUCCESS
+}
+
+// ============================================
+// AUDITORIA
+// ============================================
+
+model AuditLog {
+  id String @id @default(uuid())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  userEmail String? // snapshot caso usuário seja apagado
+  userName  String?
+
+  action   AuditAction
+  entity   String // "Equipment", "Customer", "Rental", etc
+  entityId String
+
+  // Diff dos dados (JSON: { before: {...}, after: {...} })
+  changes Json?
+
+  // Contexto
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId])
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([action])
+  @@index([createdAt])
+  /// Query quente: /auditoria lista por empresa ordenando por data desc
+  @@index([companyId, createdAt])
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  LOGIN_FAILED
+  PASSWORD_RESET_REQUESTED
+  PASSWORD_RESET_COMPLETED
+  PASSWORD_CHANGED
+}
+
+// ============================================
+// LOGS DE ACESSO
+// ============================================
+
+model AccessLog {
+  id String @id @default(uuid())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  email String // sempre registra o email tentado (mesmo se usuário não existir)
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  success       Boolean
+  failureReason String?
+
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([userId])
+  @@index([companyId])
+  @@index([success])
+  @@index([createdAt])
+  /// Query quente: alerta de 5 falhas em 15min pro mesmo email
+  @@index([email, success, createdAt])
+}
+
+// ============================================
+// HISTÓRICO DE PREÇOS
+// ============================================
+
+// ============================================
+// DESPESAS AVULSAS POR EQUIPAMENTO
+// ============================================
+//
+// Diferente de Maintenance (que tem agendamento, tipo, mão de obra+peças),
+// EquipmentExpense é pra despesas operacionais soltas: combustível, transporte
+// até a obra, lavagem, peça de consumo, etc. Conta como custo direto no
+// dashboard de lucro.
+
+model EquipmentExpense {
+  id String @id @default(uuid())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  equipmentId String
+  equipment   Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+
+  type        ExpenseType
+  description String
+  amount      Decimal     @db.Decimal(10, 2)
+  incurredAt  DateTime
+
+  notes String?
+
+  // Quem registrou (snapshot)
+  registeredBy     String?
+  registeredByName String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([equipmentId])
+  @@index([type])
+  @@index([incurredAt])
+}
+
+enum ExpenseType {
+  FUEL // Combustível
+  TRANSPORT // Transporte até a obra
+  CLEANING // Lavagem/limpeza
+  CONSUMABLE // Peça de consumo (filtro, lubrificante)
+  TAX // Taxa/imposto avulso
+  OTHER // Outro
+}
+
+// ============================================
+// API KEYS (API pública)
+// ============================================
+//
+// Cada empresa cliente pode gerar API keys pra integrar com seus sistemas.
+// Disponível apenas no plano PRO. O hash é guardado em vez do valor cru;
+// o valor cru é mostrado uma única vez no momento da criação.
+
+model ApiKey {
+  id String @id @default(uuid())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  name    String
+  /// SHA-256 do valor da key. O valor cru não é guardado.
+  keyHash String @unique
+
+  /// Últimos 4 chars (pra exibir na UI sem expor a key)
+  keyLast4 String
+
+  /// Permissões da key. Subconjunto das permissões do RBAC interno.
+  permissions String[]
+
+  /// Limite de requests por minuto. Default 60.
+  rateLimit Int @default(60)
+
+  isActive   Boolean   @default(true)
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([keyHash])
+}
+
+// ============================================
+// CONFIGURAÇÃO FISCAL DA EMPRESA
+// ============================================
+//
+// Uma config por empresa. Guarda dados pro provider emitir NFS-e/NF-e.
+// O `provider` decide qual implementação de InvoiceProvider usar.
+// Credenciais (token, certificado) ficam aqui também — em produção real,
+// considerar cifrar no DB com chave KMS.
+
+model CompanyTaxConfig {
+  id String @id @default(uuid())
+
+  companyId String  @unique
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  /// CNPJ formatado. Distinto de Company.document (pode ter filial fiscal diferente).
+  cnpj String
+
+  /// Inscrição Municipal — obrigatório pra NFS-e na maioria das prefeituras.
+  inscricaoMunicipal String?
+
+  /// Inscrição Estadual — relevante pra NF-e modelo 55.
+  inscricaoEstadual String?
+
+  /// Regime tributário (Simples Nacional, Lucro Real, Lucro Presumido).
+  taxRegime TaxRegime @default(SIMPLES_NACIONAL)
+
+  /// Código de serviço LC 116/2003 (pra NFS-e). Ex: "17.05" pra locação de bens móveis.
+  serviceCode String?
+
+  /// Alíquota ISS em % (varia por município/serviço, geralmente 2% a 5%).
+  issRate Decimal @default(0) @db.Decimal(5, 2)
+
+  /// Provider escolhido pra emissão.
+  provider InvoiceProviderType @default(MOCK)
+
+  /// Credenciais do provider (encrypt-at-rest seria ideal). Schema livre via JSON.
+  providerCredentials Json?
+
+  /// Ambiente do provider — `sandbox` pra testes, `production` pra valer.
+  providerEnv String @default("sandbox")
+
+  /// Se a empresa quer emissão automática ao concluir devolução paga.
+  autoIssueOnRentalCompletion Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum TaxRegime {
+  SIMPLES_NACIONAL
+  LUCRO_PRESUMIDO
+  LUCRO_REAL
+  MEI
+}
+
+enum InvoiceProviderType {
+  MOCK // dev/teste — emissão fake
+  FOCUS_NFE
+  PLUG_NOTAS
+  E_NOTAS
+}
+
+// ============================================
+// NOTAS FISCAIS
+// ============================================
+
+model Invoice {
+  id String @id @default(uuid())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  rentalId String?
+  rental   Rental? @relation(fields: [rentalId], references: [id])
+
+  type   InvoiceType   @default(NFSE)
+  status InvoiceStatus @default(PENDING)
+
+  /// Propósito da nota — pra NFE_55, indica se é remessa, retorno, venda, etc.
+  /// NFS-e sempre fica SERVICO (default).
+  purpose InvoicePurpose @default(SERVICO)
+
+  /// Número devolvido pela prefeitura/SEFAZ.
+  number String?
+  series String?
+
+  /// ID externo no provider (pra cancelamento e consulta).
+  providerId String?
+
+  /// Mensagem de status atual (ex: erro de validação, rejeição da SEFAZ).
+  providerStatus  String?
+  providerMessage String?
+
+  /// Valor total da nota (geralmente bate com rental.total mas pode divergir
+  /// se houve desconto/multa fora do contrato).
+  amount Decimal @db.Decimal(10, 2)
+
+  /// Descrição do serviço (texto livre pro corpo da nota).
+  description String
+
+  /// URLs do XML e PDF (DANFE/DANFSe) — populadas após autorização.
+  xmlUrl String?
+  pdfUrl String?
+
+  /// Razões fiscais
+  issAmount   Decimal?   @db.Decimal(10, 2)
+  serviceCode String?
+  taxRegime   TaxRegime?
+
+  /// Quem disparou a emissão (snapshot do user)
+  issuedBy     String?
+  issuedByName String?
+
+  issuedAt     DateTime?
+  cancelledAt  DateTime?
+  cancelReason String?
+
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  corrections InvoiceCorrection[]
+
+  @@index([companyId])
+  @@index([rentalId])
+  @@index([status])
+  @@index([providerId])
+  @@index([number])
+  /// Query quente: dashboard fiscal agrega por createdAt
+  @@index([companyId, createdAt])
+}
+
+enum InvoiceType {
+  NFSE // Nota Fiscal de Serviço Eletrônica (municipal)
+  NFE_55 // NF-e modelo 55 (estadual — venda/circulação)
+}
+
+enum InvoicePurpose {
+  SERVICO // padrão pra NFS-e
+  REMESSA_LOCACAO // saída do equipamento (CFOP 5917/6917)
+  RETORNO_LOCACAO // volta do equipamento (CFOP 1917/2917)
+  VENDA // venda do bem (baixa)
+  CONSERTO // remessa pra conserto fora
+}
+
+model InvoiceCorrection {
+  id String @id @default(uuid())
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  /// Número sequencial da CCe (provider geralmente devolve)
+  sequence Int
+
+  /// Texto da correção (mín 15 chars, máx 1000 — exigência da SEFAZ)
+  correctionText String
+
+  /// ID externo do provider pra essa CCe
+  providerId      String?
+  status          InvoiceStatus @default(PENDING)
+  providerMessage String?
+
+  appliedBy     String?
+  appliedByName String?
+
+  createdAt DateTime @default(now())
+
+  @@index([invoiceId])
+}
+
+enum InvoiceStatus {
+  PENDING // Em fila para envio
+  PROCESSING // Enviada ao provider, aguardando resposta da SEFAZ
+  ISSUED // Autorizada com sucesso
+  REJECTED // SEFAZ rejeitou (provider devolveu erro)
+  CANCELLED // Cancelada via Carta de Correção ou cancelamento dentro do prazo
+  ERROR // Erro técnico (provider fora do ar, credencial inválida)
+}
+
+// ============================================
+// PUSH SUBSCRIPTIONS (Web Push)
+// ============================================
+//
+// Cada device/browser que aceita push notifications gera um endpoint único +
+// keys (p256dh, auth). Guardamos por usuário pra mandar avisos como "locação
+// criada", "manutenção atrasada", etc.
+
+// ============================================
+// LOJAS / FILIAIS (Multi-store)
+// ============================================
+//
+// Empresas com mais de uma unidade podem dividir estoque e operação por loja.
+// Backward compat: empresas sem nenhuma Store funcionam exatamente como antes —
+// Equipment.storeId e Rental.storeId são opcionais.
+
+model Store {
+  id String @id @default(uuid())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  name  String
+  /// Filial sempre tem um código interno curto (ex: "SP01", "MATRIZ")
+  code  String
+  phone String?
+  email String?
+
+  // Endereço da filial — distinto da empresa
+  address String?
+  city    String?
+  state   String?
+  zipCode String?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  equipment Equipment[]
+  rentals   Rental[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+}
+
+model PushSubscription {
+  id String @id @default(uuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Endpoint único do browser. Funciona como ID externo.
+  endpoint String @unique
+  /// Chave P-256 ECDH do client (base64url).
+  p256dh   String
+  /// Chave de autenticação compartilhada (base64url).
+  auth     String
+
+  /// User-agent capturado na subscription pra ajudar a identificar device na UI.
+  userAgent String?
+
+  /// Se a última tentativa de envio falhou com 410/404 (subscription morta).
+  /// O dispatcher remove subs com este flag setado.
+  invalid Boolean @default(false)
+
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ============================================
+// WEBHOOKS DE SAÍDA
+// ============================================
+//
+// Locadora cadastra URL externa e escolhe eventos pra receber. Quando o evento
+// dispara no LocaTech, fazemos POST fire-and-forget com o payload assinado por HMAC.
+
+model Webhook {
+  id String @id @default(uuid())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  /// Nome amigável pra identificar (ex: "ERP integração")
+  name String
+
+  /// URL que receberá os POSTs
+  url String
+
+  /// Eventos inscritos (ex: ["rental.created", "rental.returned"])
+  events String[]
+
+  /// Segredo usado pra assinar payload com HMAC SHA256. Gerado no cadastro.
+  secret String
+
+  isActive Boolean @default(true)
+
+  /// Último disparo bem-sucedido — saúde na UI
+  lastSuccessAt DateTime?
+
+  /// Última falha — útil pra debug
+  lastFailureAt    DateTime?
+  lastFailureError String?
+
+  /// Contadores acumulados (informativo)
+  successCount Int @default(0)
+  failureCount Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([isActive])
+}
+
+model EquipmentPriceHistory {
+  id String @id @default(uuid())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  equipmentId String
+  equipment   Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+
+  // Valores antigos vs novos
+  oldDailyRate   Decimal? @db.Decimal(10, 2)
+  newDailyRate   Decimal? @db.Decimal(10, 2)
+  oldWeeklyRate  Decimal? @db.Decimal(10, 2)
+  newWeeklyRate  Decimal? @db.Decimal(10, 2)
+  oldMonthlyRate Decimal? @db.Decimal(10, 2)
+  newMonthlyRate Decimal? @db.Decimal(10, 2)
+
+  changedBy     String? // user id (snapshot apenas)
+  changedByName String?
+  reason        String?
+
+  createdAt DateTime @default(now())
+
+  @@index([equipmentId])
+  @@index([companyId])
+  @@index([createdAt])
 }

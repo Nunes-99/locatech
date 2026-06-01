@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireCompanyId } from "@/lib/session"
+import { requireCompanyId, requirePermission } from "@/lib/session"
+import { dispatchWebhooks } from "@/lib/webhooks"
 import { z } from "zod"
+
+function authErrorResponse(error: Error): NextResponse | null {
+  const status = (error as Error & { status?: number }).status
+  if (error.message === "Não autorizado") return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+  if (status === 403 || error.message === "Acesso negado")
+    return NextResponse.json({ error: "Acesso negado" }, { status: 403 })
+  return null
+}
 
 const createRentalSchema = z.object({
   customerId: z.string().uuid(),
@@ -11,6 +20,8 @@ const createRentalSchema = z.object({
   deliveryAddress: z.string().optional(),
   depositAmount: z.number().optional(),
   notes: z.string().optional(),
+  /** Se true, cria como orçamento (QUOTE) com data de expiração baseada em `Company.quoteValidDays`. */
+  asQuote: z.boolean().optional(),
   items: z.array(
     z.object({
       equipmentId: z.string().uuid(),
@@ -31,6 +42,7 @@ export async function GET(request: NextRequest) {
     const rentals = await prisma.rental.findMany({
       where: {
         companyId,
+        deletedAt: null,
         ...(status && status !== "all" ? { status: status as any } : {}),
         ...(customerId ? { customerId } : {}),
         ...(search
@@ -68,7 +80,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const companyId = await requireCompanyId()
+    const user = await requirePermission("rental.create")
+    const companyId = user.companyId
     const body = await request.json()
     const data = createRentalSchema.parse(body)
 
@@ -129,6 +142,17 @@ export async function POST(request: NextRequest) {
     const deliveryFee = data.type === "DELIVERY" ? 50 : 0 // TODO: configurável
     const total = subtotal + deliveryFee
 
+    // Determina data de expiração se for orçamento
+    let quoteExpiresAt: Date | null = null
+    if (data.asQuote) {
+      const company = await prisma.company.findUnique({
+        where: { id: companyId },
+        select: { quoteValidDays: true },
+      })
+      const validDays = company?.quoteValidDays ?? 7
+      quoteExpiresAt = new Date(Date.now() + validDays * 24 * 60 * 60 * 1000)
+    }
+
     // Criar locação em transação
     const rental = await prisma.$transaction(async (tx) => {
       // Criar locação
@@ -146,6 +170,8 @@ export async function POST(request: NextRequest) {
           total,
           depositAmount: data.depositAmount || 0,
           notes: data.notes,
+          status: data.asQuote ? "QUOTE" : "CONFIRMED",
+          quoteExpiresAt,
           items: {
             create: rentalItems,
           },
@@ -188,6 +214,21 @@ export async function POST(request: NextRequest) {
       })
 
       return newRental
+    })
+
+    // Dispara webhook fire-and-forget (não bloqueia resposta)
+    void dispatchWebhooks({
+      companyId,
+      event: data.asQuote ? "rental.created" : "rental.confirmed",
+      data: {
+        rentalId: rental.id,
+        contractNumber: rental.contractNumber,
+        customerId: rental.customerId,
+        total: Number(rental.total),
+        startDate: rental.startDate,
+        expectedEndDate: rental.expectedEndDate,
+        status: rental.status,
+      },
     })
 
     return NextResponse.json(rental, { status: 201 })

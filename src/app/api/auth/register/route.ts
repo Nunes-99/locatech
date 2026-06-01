@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { hashPassword } from "@/lib/auth"
+import { sendTemplated, getWelcomeEmail, getEmailVerifyEmail } from "@/lib/notifications/email"
+import { checkPasswordStrength, TERMS_VERSION } from "@/lib/validators"
+import crypto from "crypto"
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { companyName, name, email, password } = body
+    const { companyName, name, email, password, acceptedTerms } = body
 
     // Validations
     if (!companyName || !name || !email || !password) {
@@ -15,9 +18,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (password.length < 6) {
+    if (!acceptedTerms) {
       return NextResponse.json(
-        { error: "A senha deve ter pelo menos 6 caracteres" },
+        { error: "É necessário aceitar os Termos de Uso e a Política de Privacidade" },
+        { status: 400 }
+      )
+    }
+
+    const pwd = checkPasswordStrength(password)
+    if (!pwd.ok) {
+      return NextResponse.json(
+        { error: pwd.errors.join(". ") },
         { status: 400 }
       )
     }
@@ -47,6 +58,10 @@ export async function POST(request: NextRequest) {
         },
       })
 
+      // Token de verificação de email (24h de validade)
+      const verifyToken = crypto.randomBytes(32).toString("hex")
+      const verifyExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000)
+
       // Create user as OWNER
       const user = await tx.user.create({
         data: {
@@ -55,11 +70,37 @@ export async function POST(request: NextRequest) {
           passwordHash,
           role: "OWNER",
           companyId: company.id,
+          termsAcceptedAt: new Date(),
+          termsVersion: TERMS_VERSION,
+          emailVerifyToken: verifyToken,
+          emailVerifyTokenExpiry: verifyExpiry,
         },
       })
 
       return { company, user }
     })
+
+    // Email de boas-vindas (não-bloqueante)
+    sendTemplated(email, getWelcomeEmail, {
+      userName: name,
+      companyName,
+      loginUrl: `${process.env.NEXTAUTH_URL || ""}/login`,
+    }).catch((err) => console.error("[register] welcome email failed:", err))
+
+    // Email de verificação (com link contendo o token gravado no User)
+    // Buscamos o token criado dentro da transação anônima — mais simples re-fetch aqui
+    prisma.user
+      .findUnique({ where: { id: result.user.id }, select: { emailVerifyToken: true } })
+      .then((u) => {
+        if (!u?.emailVerifyToken) return
+        const verifyLink = `${process.env.NEXTAUTH_URL || ""}/verificar-email?token=${u.emailVerifyToken}`
+        return sendTemplated(email, getEmailVerifyEmail, {
+          userName: name,
+          verifyLink,
+          companyName,
+        })
+      })
+      .catch((err) => console.error("[register] verify email failed:", err))
 
     return NextResponse.json(
       {
