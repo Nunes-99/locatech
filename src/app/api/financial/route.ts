@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
     const rentals = await prisma.rental.findMany({
       where: {
         companyId,
+        deletedAt: null,
         createdAt: { gte: startDate },
       },
       select: {
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest) {
     const maintenances = await prisma.maintenance.findMany({
       where: {
         companyId,
+        deletedAt: null,
         createdAt: { gte: startDate },
       },
       select: {

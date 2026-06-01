@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "./auth"
 import { prisma } from "./prisma"
 import { canPerform, Permission, Role } from "./permissions"
+import { enterAuditContext } from "./audit-context"
 
 export interface SessionUser {
   id: string
@@ -32,6 +33,15 @@ export async function requireAuth(): Promise<SessionUser> {
   if (!user) {
     throw new Error("Não autorizado")
   }
+
+  // Liga o contexto de auditoria pro Prisma extension capturar
+  // userId/companyId nas writes subsequentes deste request.
+  enterAuditContext({
+    userId: user.id,
+    userEmail: user.email,
+    userName: user.name,
+    companyId: user.companyId,
+  })
 
   return user
 }

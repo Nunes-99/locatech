@@ -19,6 +19,18 @@ export function runWithAuditContext<T>(context: AuditContext, fn: () => Promise<
   return storage.run(context, fn)
 }
 
+/**
+ * Liga o contexto pra TODO o restante da execução async atual (sem precisar
+ * de wrapper). Use no início do handler — `requireAuth()` faz isso. Próximas
+ * queries do Prisma na mesma cadeia async vão ver o contexto.
+ *
+ * Cada request HTTP gera sua própria cadeia async, então não há vazamento
+ * entre requests concorrentes.
+ */
+export function enterAuditContext(context: AuditContext): void {
+  storage.enterWith(context)
+}
+
 export function setAuditContextField<K extends keyof AuditContext>(
   key: K,
   value: AuditContext[K]

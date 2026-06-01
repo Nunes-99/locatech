@@ -25,7 +25,7 @@ export async function POST(
     const data = returnSchema.parse(body)
 
     const rental = await prisma.rental.findFirst({
-      where: { id, companyId },
+      where: { id, companyId, deletedAt: null },
       include: {
         items: true,
         customer: true,

@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
     if (type === "rentals") {
       // Relatorio de locacoes
       const rentals = await prisma.rental.findMany({
-        where: { companyId },
+        where: { companyId, deletedAt: null },
         include: {
           customer: { select: { name: true } },
         },
@@ -155,7 +155,7 @@ export async function GET(request: NextRequest) {
       prisma.equipment.count({ where: { companyId, status: { not: "RETIRED" } } }),
       prisma.customer.count({ where: { companyId, isBlocked: false } }),
       prisma.rental.findMany({
-        where: { companyId },
+        where: { companyId, deletedAt: null },
         select: {
           id: true,
           status: true,
@@ -165,7 +165,7 @@ export async function GET(request: NextRequest) {
         },
       }),
       prisma.maintenance.findMany({
-        where: { companyId },
+        where: { companyId, deletedAt: null },
         select: { id: true, status: true, totalCost: true },
       }),
       prisma.company.findUnique({

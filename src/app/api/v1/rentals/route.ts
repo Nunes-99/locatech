@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { authenticateApiKey, isApiKeyError } from "@/lib/api-key"
+import { authenticateApiKey, isApiKeyError, requireApiPermission } from "@/lib/api-key"
 
 /**
  * GET /api/v1/rentals
@@ -10,6 +10,7 @@ import { authenticateApiKey, isApiKeyError } from "@/lib/api-key"
 export async function GET(request: NextRequest) {
   try {
     const ctx = await authenticateApiKey(request.headers)
+    requireApiPermission(ctx, "rental.view")
     const { searchParams } = new URL(request.url)
 
     const status = searchParams.get("status") || undefined

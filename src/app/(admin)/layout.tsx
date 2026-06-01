@@ -20,9 +20,14 @@ export default async function AdminLayout({
     select: { email: true, role: true },
   })
 
-  // Only allow specific admin emails or roles
-  const adminEmails = (process.env.ADMIN_EMAILS || "").split(",").map((e) => e.trim())
-  const isAdmin = user?.email && (adminEmails.includes(user.email) || user.role === "OWNER")
+  // Apenas emails explicitamente listados em ADMIN_EMAILS (super-admin).
+  // OWNER de uma locadora NÃO é super-admin — esse papel só dá controle sobre
+  // a própria empresa.
+  const adminEmails = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim())
+    .filter(Boolean)
+  const isAdmin = !!(user?.email && adminEmails.includes(user.email))
 
   if (!isAdmin) {
     redirect("/dashboard")

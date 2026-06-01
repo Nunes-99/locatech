@@ -15,10 +15,13 @@ async function requireAdmin() {
     select: { email: true, role: true },
   })
 
-  const adminEmails = (process.env.ADMIN_EMAILS || "").split(",").map((e) => e.trim())
-  const isAdmin = user?.email && (adminEmails.includes(user.email) || user.role === "OWNER")
-
-  if (!isAdmin) {
+  const adminEmails = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim())
+    .filter(Boolean)
+  // Super-admin é controlado SÓ por ADMIN_EMAILS. OWNER de locadora não tem
+  // privilégio global — só sobre a própria empresa.
+  if (!user?.email || !adminEmails.includes(user.email)) {
     throw new Error("Acesso negado")
   }
 
@@ -60,8 +63,11 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Error fetching companies:", error)
     if (error instanceof Error) {
-      if (error.message === "Não autorizado" || error.message === "Acesso negado") {
+      if (error.message === "Não autorizado") {
         return NextResponse.json({ error: error.message }, { status: 401 })
+      }
+      if (error.message === "Acesso negado") {
+        return NextResponse.json({ error: error.message }, { status: 403 })
       }
     }
     return NextResponse.json(

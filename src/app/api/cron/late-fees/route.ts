@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
     // 1. Find overdue rentals and update late fees
     const overdueRentals = await prisma.rental.findMany({
       where: {
+        deletedAt: null,
         status: { in: ["IN_PROGRESS", "OVERDUE"] },
         expectedEndDate: { lt: today },
         actualEndDate: null,
@@ -89,6 +90,7 @@ export async function GET(request: NextRequest) {
 
     const upcomingRentals = await prisma.rental.findMany({
       where: {
+        deletedAt: null,
         status: "IN_PROGRESS",
         expectedEndDate: {
           gte: reminderDate1,

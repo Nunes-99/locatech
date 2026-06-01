@@ -15,7 +15,7 @@ export async function GET(
 
     // Buscar locacao com todos os dados necessarios
     const rental = await prisma.rental.findFirst({
-      where: { id, companyId },
+      where: { id, companyId, deletedAt: null },
       include: {
         customer: true,
         items: true,

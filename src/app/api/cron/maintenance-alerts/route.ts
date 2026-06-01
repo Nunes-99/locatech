@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
 
     const upcomingMaintenances = await prisma.maintenance.findMany({
       where: {
+        deletedAt: null,
         status: "SCHEDULED",
         scheduledDate: {
           gte: today,

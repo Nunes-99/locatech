@@ -1,12 +1,25 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requirePermission } from "@/lib/session"
-import { generateApiKey } from "@/lib/api-key"
+import { generateApiKey, DEFAULT_API_KEY_PERMISSIONS } from "@/lib/api-key"
 import { z } from "zod"
+
+const ALL_PERMISSIONS = [
+  "equipment.view", "equipment.create", "equipment.update", "equipment.delete", "equipment.import",
+  "category.manage",
+  "customer.view", "customer.create", "customer.update", "customer.delete", "customer.block",
+  "rental.view", "rental.create", "rental.update", "rental.return", "rental.cancel", "rental.delete",
+  "maintenance.view", "maintenance.manage",
+  "financial.view", "financial.export",
+  "report.view", "report.export",
+  "user.view", "user.create", "user.update", "user.delete",
+  "company.view", "company.update",
+  "audit.view",
+] as const
 
 const createSchema = z.object({
   name: z.string().min(1).max(100),
-  permissions: z.array(z.string()).optional(),
+  permissions: z.array(z.enum(ALL_PERMISSIONS)).optional(),
   rateLimit: z.number().int().min(1).max(10000).optional(),
   expiresAt: z.string().optional().nullable(),
 })
@@ -65,7 +78,9 @@ export async function POST(request: NextRequest) {
         name: data.name,
         keyHash: hash,
         keyLast4: last4,
-        permissions: data.permissions ?? [],
+        permissions: data.permissions && data.permissions.length > 0
+          ? data.permissions
+          : DEFAULT_API_KEY_PERMISSIONS,
         rateLimit: data.rateLimit ?? 60,
         expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
       },

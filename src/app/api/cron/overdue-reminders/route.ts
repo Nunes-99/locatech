@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
     // Find all rentals that are ending today
     const endingToday = await prisma.rental.findMany({
       where: {
+        deletedAt: null,
         status: "IN_PROGRESS",
         expectedEndDate: {
           gte: today,
@@ -38,6 +39,7 @@ export async function GET(request: NextRequest) {
     // Find all overdue rentals
     const overdueRentals = await prisma.rental.findMany({
       where: {
+        deletedAt: null,
         status: {
           in: ["IN_PROGRESS", "OVERDUE"],
         },

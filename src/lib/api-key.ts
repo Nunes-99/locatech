@@ -91,10 +91,28 @@ export async function authenticateApiKey(headers: Headers): Promise<ApiKeyContex
   }
 }
 
+/**
+ * Lista usada quando uma key é criada sem permissions explícitas. Acesso
+ * apenas de leitura nos recursos principais. Pra escrita, a key precisa ser
+ * recriada com permissions específicas.
+ */
+export const DEFAULT_API_KEY_PERMISSIONS: Permission[] = [
+  "equipment.view",
+  "customer.view",
+  "rental.view",
+]
+
+/**
+ * Valida que a key tem a permissão exigida. Antes (bug): array vazio
+ * significava "acesso total" — qualquer key criada sem permissions explícitas
+ * virava admin. Agora: array vazio é tratado como negação total e quem chama
+ * deve garantir um default sensato no momento da criação.
+ */
 export function requireApiPermission(ctx: ApiKeyContext, permission: Permission): void {
-  // Se a key tem permissões custom, valida pela lista; senão usa null = "tudo".
-  if (ctx.permissions.length === 0) return // legacy: keys sem permissions = full access
-  if (!ctx.permissions.includes(permission) && !canPerform("OWNER", permission)) {
+  if (ctx.permissions.length === 0) {
+    throw apiKeyError(403, `Esta API key não tem permissões configuradas`)
+  }
+  if (!ctx.permissions.includes(permission)) {
     throw apiKeyError(403, `Esta API key não tem permissão para '${permission}'`)
   }
 }

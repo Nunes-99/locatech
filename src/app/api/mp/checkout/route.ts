@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { requireCompanyId, getSession } from "@/lib/session"
 import { mpPreapproval, isMpConfigured } from "@/lib/payments/mercadopago"
 import { PLAN_PRICES } from "@/lib/plan-limits"
+import { rateLimit } from "@/lib/rate-limit"
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,6 +15,19 @@ export async function POST(request: NextRequest) {
     }
 
     const companyId = await requireCompanyId()
+
+    const rl = rateLimit({
+      key: `mp-checkout:${companyId}`,
+      limit: 5,
+      windowMs: 60_000,
+    })
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: `Muitas tentativas. Tente em ${rl.retryAfterSeconds}s.` },
+        { status: 429 }
+      )
+    }
+
     const session = await getSession()
     const { plan } = await request.json()
 
@@ -28,10 +42,40 @@ export async function POST(request: NextRequest) {
 
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      select: { name: true, email: true },
+      select: { name: true, email: true, mpPreapprovalId: true },
     })
     if (!company) {
       return NextResponse.json({ error: "Empresa não encontrada" }, { status: 404 })
+    }
+
+    // Se a empresa já tem assinatura no MP, checa o status antes de criar
+    // outra. Sem essa proteção, clique duplo no botão "Assinar" criaria duas
+    // preapprovals e o cliente acabaria pagando 2x.
+    if (company.mpPreapprovalId) {
+      try {
+        const existing = await mpPreapproval.get({ id: company.mpPreapprovalId })
+        if (existing && existing.status === "authorized") {
+          return NextResponse.json(
+            {
+              error: "Você já tem uma assinatura ativa. Gerencie em /seguranca.",
+              preapprovalId: existing.id,
+            },
+            { status: 409 }
+          )
+        }
+        // Se estiver "pending", reaproveita o init_point pra não criar duplicata
+        if (existing && existing.status === "pending" && existing.init_point) {
+          return NextResponse.json({
+            url: existing.init_point,
+            preapprovalId: existing.id,
+            reused: true,
+          })
+        }
+        // Outros status (cancelled, paused) — segue e cria nova
+      } catch (err) {
+        // Se o MP retornar erro consultando, log e segue (não bloqueia upgrade)
+        console.warn("[mp checkout] falha consultando preapproval existente:", err)
+      }
     }
 
     const payerEmail = company.email || session?.user?.email

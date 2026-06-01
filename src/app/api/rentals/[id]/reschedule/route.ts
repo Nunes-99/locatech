@@ -21,6 +21,7 @@ export async function PATCH(
       where: {
         id: params.id,
         companyId,
+        deletedAt: null,
       },
     })
 
