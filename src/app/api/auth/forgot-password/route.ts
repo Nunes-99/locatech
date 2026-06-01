@@ -52,43 +52,43 @@ export async function POST(request: NextRequest) {
       include: { company: { select: { name: true } } },
     })
 
-    // Sempre devolve sucesso pra evitar enumeração
-    if (!user) {
-      return NextResponse.json({ message: "E-mail enviado" })
+    if (user) {
+      // Token cru vai no email; hash SHA-256 vai pro DB. Dump do DB não
+      // permite hijack — atacante precisaria do email pra usar o token.
+      const rawToken = crypto.randomBytes(32).toString("hex")
+      const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex")
+      const resetTokenExpiry = new Date(Date.now() + 3600000) // 1 hora
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { resetToken: hashedToken, resetTokenExpiry },
+      })
+
+      const resetLink = `${process.env.NEXTAUTH_URL}/redefinir-senha?token=${rawToken}`
+
+      // Fire-and-forget — sem await. Sem isso, response time variava em
+      // ~500ms entre "user existe" e "user não existe" (envio síncrono via
+      // Resend), criando timing oracle pra enumeração de emails mesmo com
+      // resposta unificada.
+      void sendTemplated(normalizedEmail, getPasswordResetEmail, {
+        userName: user.name,
+        resetLink,
+        companyName: user.company.name,
+      }).catch((err) => console.error("[forgot-password] email failed:", err))
+
+      void logAuthEvent(baseClient, {
+        companyId: user.companyId,
+        userId: user.id,
+        userEmail: user.email,
+        userName: user.name,
+        action: "PASSWORD_RESET_REQUESTED",
+        ipAddress: ip,
+        userAgent: request.headers.get("user-agent") || undefined,
+      }).catch((err) => console.error("[forgot-password] audit failed:", err))
     }
 
-    // Token cru vai no email; hash SHA-256 vai pro DB. Dump do DB não permite
-    // hijack — atacante precisaria do email pra usar o token.
-    const rawToken = crypto.randomBytes(32).toString("hex")
-    const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex")
-    const resetTokenExpiry = new Date(Date.now() + 3600000) // 1 hora
-
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        resetToken: hashedToken,
-        resetTokenExpiry,
-      },
-    })
-
-    const resetLink = `${process.env.NEXTAUTH_URL}/redefinir-senha?token=${rawToken}`
-
-    await sendTemplated(normalizedEmail, getPasswordResetEmail, {
-      userName: user.name,
-      resetLink,
-      companyName: user.company.name,
-    })
-
-    await logAuthEvent(baseClient, {
-      companyId: user.companyId,
-      userId: user.id,
-      userEmail: user.email,
-      userName: user.name,
-      action: "PASSWORD_RESET_REQUESTED",
-      ipAddress: ip,
-      userAgent: request.headers.get("user-agent") || undefined,
-    })
-
+    // Sempre devolve sucesso pra evitar enumeração — agora também com
+    // tempo constante (sem await em sendTemplated/logAuthEvent).
     return NextResponse.json({ message: "E-mail enviado" })
   } catch (error) {
     console.error("Forgot password error:", error)

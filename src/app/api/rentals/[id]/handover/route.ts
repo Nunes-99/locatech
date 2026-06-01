@@ -24,7 +24,7 @@ export async function POST(
 
     const rental = await prisma.rental.findFirst({
       where: { id, companyId: user.companyId, deletedAt: null },
-      select: { id: true, status: true },
+      select: { id: true, status: true, handoverConfirmedAt: true },
     })
     if (!rental) {
       return NextResponse.json({ error: "Locação não encontrada" }, { status: 404 })
@@ -35,6 +35,20 @@ export async function POST(
           error: `Não dá pra gerar QR de entrega numa locação com status ${rental.status}`,
         },
         { status: 400 }
+      )
+    }
+    // Bloqueia re-emissão se entrega já foi confirmada — sem isso, qualquer
+    // operador podia "regenerar QR" e re-abrir a entrega de um contrato já
+    // confirmado pelo cliente, invalidando o registro original (anulava
+    // signature/IP capturados). Pra refazer, agora requer fluxo manual de
+    // anular a confirmação (não exposto via API ainda).
+    if (rental.handoverConfirmedAt) {
+      return NextResponse.json(
+        {
+          error:
+            "Entrega já foi confirmada pelo cliente. Regerar invalidaria o registro original — contate o suporte.",
+        },
+        { status: 409 }
       )
     }
 

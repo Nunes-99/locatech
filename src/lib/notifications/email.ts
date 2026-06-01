@@ -55,18 +55,30 @@ function esc(v: unknown): string {
 
 /**
  * Sanitiza URL pra atributos `href`/`src`. Rejeita protocolos perigosos
- * (`javascript:`, `data:` exceto imagens, `vbscript:`, etc) e escapa entities.
+ * (`javascript:`, `vbscript:`, `data:image/svg+xml` que executa JS) e
+ * escapa entities.
  *
  * Provider de NF pode em tese retornar URLs maliciosas — passamos por aqui
  * antes de embutir no email.
+ *
+ * Por que SVG é bloqueado mesmo dentro de `data:image/`: SVG inline pode
+ * conter `<script>` e atributos `on*=` que alguns clientes de email
+ * renderizam. Aceitamos só raster (png/jpg/gif/webp).
  */
+const ALLOWED_DATA_IMAGE = /^data:image\/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=]+$/i
+const MAX_URL_LEN = 2048
+const MAX_DATA_URL_LEN = 256 * 1024 // 256KB
+
 function safeUrl(url: unknown, fallback = "#"): string {
   if (typeof url !== "string") return fallback
   const trimmed = url.trim()
-  // Aceita apenas http(s) e data:image/...
-  if (!/^https?:\/\//i.test(trimmed) && !/^data:image\//i.test(trimmed)) {
-    return fallback
+  if (trimmed.startsWith("data:")) {
+    if (trimmed.length > MAX_DATA_URL_LEN) return fallback
+    if (!ALLOWED_DATA_IMAGE.test(trimmed)) return fallback
+    return esc(trimmed)
   }
+  if (!/^https?:\/\//i.test(trimmed)) return fallback
+  if (trimmed.length > MAX_URL_LEN) return fallback
   return esc(trimmed)
 }
 

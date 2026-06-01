@@ -14,7 +14,9 @@ const taxConfigSchema = z.object({
   serviceCode: z.string().optional().nullable(),
   issRate: z.number().min(0).max(100),
   provider: z.enum(["MOCK", "FOCUS_NFE", "PLUG_NOTAS", "E_NOTAS"]),
-  providerCredentials: z.record(z.string()).optional().nullable(),
+  // Cada credencial precisa ser não-vazia. Antes: `{token: ""}` passava e
+  // sobrescrevia credenciais válidas com strings vazias.
+  providerCredentials: z.record(z.string().min(1)).optional().nullable(),
   providerEnv: z.enum(["sandbox", "production"]),
   autoIssueOnRentalCompletion: z.boolean(),
 })

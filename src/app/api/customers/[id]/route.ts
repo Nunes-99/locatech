@@ -36,14 +36,47 @@ export async function GET(
     const companyId = await requireCompanyId()
     const { id } = await params
 
+    // Não retorna campos sensíveis das locações no GET do cliente:
+    //   - customerSignatureUrl/customerSignedIp são biometria/PII e devem
+    //     ficar restritos ao detalhe da locação (já gated)
+    //   - internalNotes pode conter dados internos da operação
+    //   - handoverToken/returnToken são tokens ativos
     const customer = await prisma.customer.findFirst({
       where: { id, companyId },
       include: {
         rentals: {
-          include: {
+          select: {
+            id: true,
+            contractNumber: true,
+            startDate: true,
+            expectedEndDate: true,
+            actualEndDate: true,
+            status: true,
+            type: true,
+            total: true,
+            depositAmount: true,
+            paymentStatus: true,
+            paymentMethod: true,
+            lateDays: true,
+            lateFee: true,
+            createdAt: true,
             items: {
-              include: {
-                equipment: true,
+              select: {
+                id: true,
+                equipmentCode: true,
+                equipmentName: true,
+                quantity: true,
+                days: true,
+                dailyRate: true,
+                subtotal: true,
+                equipment: {
+                  select: {
+                    id: true,
+                    code: true,
+                    name: true,
+                    status: true,
+                  },
+                },
               },
             },
           },

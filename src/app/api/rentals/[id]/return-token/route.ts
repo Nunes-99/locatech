@@ -22,7 +22,7 @@ export async function POST(
 
     const rental = await prisma.rental.findFirst({
       where: { id, companyId: user.companyId, deletedAt: null },
-      select: { status: true },
+      select: { status: true, returnConfirmedAt: true },
     })
     if (!rental) {
       return NextResponse.json({ error: "Locação não encontrada" }, { status: 404 })
@@ -31,6 +31,17 @@ export async function POST(
       return NextResponse.json(
         { error: `Não dá pra gerar QR de devolução num status ${rental.status}` },
         { status: 400 }
+      )
+    }
+    // Bloqueia re-emissão se devolução já foi confirmada — sem isso, gerar QR
+    // novo invalida o registro original que o cliente fez.
+    if (rental.returnConfirmedAt) {
+      return NextResponse.json(
+        {
+          error:
+            "Devolução já foi registrada pelo cliente. Contate o suporte pra anular antes de regerar.",
+        },
+        { status: 409 }
       )
     }
 
