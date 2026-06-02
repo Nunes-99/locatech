@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireCompanyId } from "@/lib/session"
 import { canAddCustomer, getUpgradeMessage } from "@/lib/plan-limits"
+import { Prisma } from "@prisma/client"
 import { z } from "zod"
 
 const createCustomerSchema = z.object({
@@ -25,27 +26,46 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const search = searchParams.get("search")
     const creditScore = searchParams.get("creditScore")
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1)
+    const pageSize = Math.min(
+      100,
+      Math.max(1, parseInt(searchParams.get("pageSize") || "50", 10) || 50)
+    )
 
-    const customers = await prisma.customer.findMany({
-      where: {
-        companyId,
-        isBlocked: false,
-        ...(creditScore && creditScore !== "all" ? { creditScore: creditScore as any } : {}),
-        ...(search
-          ? {
-              OR: [
-                { name: { contains: search, mode: "insensitive" } },
-                { document: { contains: search } },
-                { email: { contains: search, mode: "insensitive" } },
-                { phone: { contains: search } },
-              ],
-            }
-          : {}),
+    const where: Prisma.CustomerWhereInput = {
+      companyId,
+      isBlocked: false,
+      ...(creditScore && creditScore !== "all" ? { creditScore: creditScore as any } : {}),
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: "insensitive" as const } },
+              { document: { contains: search } },
+              { email: { contains: search, mode: "insensitive" as const } },
+              { phone: { contains: search } },
+            ],
+          }
+        : {}),
+    }
+
+    const [customers, total] = await Promise.all([
+      prisma.customer.findMany({
+        where,
+        orderBy: { name: "asc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.customer.count({ where }),
+    ])
+
+    return NextResponse.json(customers, {
+      headers: {
+        "X-Total-Count": String(total),
+        "X-Page": String(page),
+        "X-Page-Size": String(pageSize),
+        "X-Total-Pages": String(Math.ceil(total / pageSize)),
       },
-      orderBy: { name: "asc" },
     })
-
-    return NextResponse.json(customers)
   } catch (error) {
     console.error("Error fetching customers:", error)
     if (error instanceof Error && error.message === "Não autorizado") {

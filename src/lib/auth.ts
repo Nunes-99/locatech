@@ -167,7 +167,29 @@ export const authOptions: NextAuthOptions = {
           // Aceita TOTP de 6 dígitos OU backup code de 8 hex chars
           const { verifyTotpCode, consumeBackupCode } = await import("./totp")
           let totpOk = false
+          let usedBackupCode = false
           if (/^\d{6}$/.test(totpCode)) {
+            // Anti-replay: rejeita o mesmo código dentro de 90s (= janela
+            // atual + tolerância). RFC 6238 não previne replay nativamente;
+            // atacante que captura um código (shoulder surf, screen share)
+            // tem ~60s pra reusar. Bloqueamos.
+            const REPLAY_WINDOW_MS = 90 * 1000
+            if (
+              user.lastTotpCode === totpCode &&
+              user.lastTotpCodeAt &&
+              Date.now() - user.lastTotpCodeAt.getTime() < REPLAY_WINDOW_MS
+            ) {
+              await recordAccessLog({
+                email,
+                userId: user.id,
+                companyId: user.companyId,
+                success: false,
+                failureReason: "TOTP_REPLAY",
+                ipAddress,
+                userAgent,
+              })
+              throw new Error("Código 2FA já usado. Aguarde o próximo.")
+            }
             totpOk = await verifyTotpCode(totpCode, user.totpSecret)
           } else if (user.totpBackupCodes.length > 0) {
             const r = consumeBackupCode(totpCode, user.totpBackupCodes)
@@ -177,6 +199,7 @@ export const authOptions: NextAuthOptions = {
                 data: { totpBackupCodes: r.remaining },
               })
               totpOk = true
+              usedBackupCode = true
             }
           }
 
@@ -191,6 +214,15 @@ export const authOptions: NextAuthOptions = {
               userAgent,
             })
             throw new Error("Código 2FA inválido")
+          }
+
+          // Grava o código aceito pra detectar replay no próximo request.
+          // Skip pra backup codes (já são consumidos via remoção do array).
+          if (!usedBackupCode) {
+            await prisma.user.update({
+              where: { id: user.id },
+              data: { lastTotpCode: totpCode, lastTotpCodeAt: new Date() },
+            })
           }
         }
 

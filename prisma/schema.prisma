@@ -139,6 +139,11 @@ model User {
   /// Hashes SHA-256 dos códigos de backup (NÃO os códigos em claro). Plain
   /// exibido pro user só uma vez na ativação. Cada uso remove o hash.
   totpBackupCodes String[]
+  /// Anti-replay TOTP: guarda último código aceito + timestamp. RFC 6238
+  /// não previne replay dentro da janela (30s + tolerância); guardamos pra
+  /// rejeitar o mesmo código 2x na mesma janela.
+  lastTotpCode    String?
+  lastTotpCodeAt  DateTime?
 
   // Timestamps
   createdAt DateTime @default(now())
@@ -281,6 +286,11 @@ model Equipment {
   expenses     EquipmentExpense[]
 
   @@unique([companyId, code])
+  /// Serial deve ser único por empresa quando informado. Postgres trata
+  /// múltiplos NULLs como distintos por default, então `serialNumber=null`
+  /// em vários equipamentos não dispara violação. Defesa contra cadastro
+  /// duplicado acidental do mesmo ativo físico.
+  @@unique([companyId, serialNumber])
   @@index([companyId])
   @@index([categoryId])
   @@index([status])

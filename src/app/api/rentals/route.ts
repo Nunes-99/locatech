@@ -140,34 +140,51 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status")
     const customerId = searchParams.get("customerId")
     const search = searchParams.get("search")
+    // Paginação — cap em 100 pra impedir tenants grandes de OOMar o server.
+    // Default 50 cobre primeira tela. Frontend pode iterar `?page=2`.
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1)
+    const pageSize = Math.min(
+      100,
+      Math.max(1, parseInt(searchParams.get("pageSize") || "50", 10) || 50)
+    )
 
-    const rentals = await prisma.rental.findMany({
-      where: {
-        companyId,
-        deletedAt: null,
-        ...(status && status !== "all" ? { status: status as any } : {}),
-        ...(customerId ? { customerId } : {}),
-        ...(search
-          ? {
-              OR: [
-                { customer: { name: { contains: search, mode: "insensitive" } } },
-                { contractNumber: { equals: parseInt(search) || -1 } },
-              ],
-            }
-          : {}),
-      },
-      include: {
-        customer: true,
-        items: {
-          include: {
-            equipment: true,
-          },
+    const where: Prisma.RentalWhereInput = {
+      companyId,
+      deletedAt: null,
+      ...(status && status !== "all" ? { status: status as any } : {}),
+      ...(customerId ? { customerId } : {}),
+      ...(search
+        ? {
+            OR: [
+              { customer: { name: { contains: search, mode: "insensitive" as const } } },
+              { contractNumber: { equals: parseInt(search) || -1 } },
+            ],
+          }
+        : {}),
+    }
+
+    const [rentals, total] = await Promise.all([
+      prisma.rental.findMany({
+        where,
+        include: {
+          customer: true,
+          items: { include: { equipment: true } },
         },
-      },
-      orderBy: { createdAt: "desc" },
-    })
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.rental.count({ where }),
+    ])
 
-    return NextResponse.json(rentals)
+    return NextResponse.json(rentals, {
+      headers: {
+        "X-Total-Count": String(total),
+        "X-Page": String(page),
+        "X-Page-Size": String(pageSize),
+        "X-Total-Pages": String(Math.ceil(total / pageSize)),
+      },
+    })
   } catch (error) {
     console.error("Error fetching rentals:", error)
     if (error instanceof Error && error.message === "Não autorizado") {

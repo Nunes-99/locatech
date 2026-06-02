@@ -22,28 +22,48 @@ export async function GET(request: NextRequest) {
     const equipmentId = searchParams.get("equipmentId")
     const type = searchParams.get("type")
 
-    const maintenances = await prisma.maintenance.findMany({
-      where: {
-        companyId,
-        deletedAt: null,
-        ...(status && status !== "all" ? { status: status as any } : {}),
-        ...(equipmentId ? { equipmentId } : {}),
-        ...(type && type !== "all" ? { type: type as any } : {}),
-      },
-      include: {
-        equipment: {
-          select: {
-            id: true,
-            code: true,
-            name: true,
-            status: true,
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1)
+    const pageSize = Math.min(
+      100,
+      Math.max(1, parseInt(searchParams.get("pageSize") || "50", 10) || 50)
+    )
+
+    const where = {
+      companyId,
+      deletedAt: null,
+      ...(status && status !== "all" ? { status: status as any } : {}),
+      ...(equipmentId ? { equipmentId } : {}),
+      ...(type && type !== "all" ? { type: type as any } : {}),
+    }
+
+    const [maintenances, total] = await Promise.all([
+      prisma.maintenance.findMany({
+        where,
+        include: {
+          equipment: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              status: true,
+            },
           },
         },
-      },
-      orderBy: { scheduledDate: "desc" },
-    })
+        orderBy: { scheduledDate: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.maintenance.count({ where }),
+    ])
 
-    return NextResponse.json(maintenances)
+    return NextResponse.json(maintenances, {
+      headers: {
+        "X-Total-Count": String(total),
+        "X-Page": String(page),
+        "X-Page-Size": String(pageSize),
+        "X-Total-Pages": String(Math.ceil(total / pageSize)),
+      },
+    })
   } catch (error) {
     console.error("Error fetching maintenances:", error)
     if (error instanceof Error && error.message === "Não autorizado") {

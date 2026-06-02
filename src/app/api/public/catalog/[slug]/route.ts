@@ -30,8 +30,9 @@ export async function GET(
         publicCatalog: true,
         catalogHeadline: true,
         whatsappContact: true,
-        phone: true,
-        email: true,
+        // phone/email omitidos da resposta pública — antes scrappers extraíam
+        // dados de contato da empresa direto do JSON. Pra contato público
+        // use `whatsappContact` (campo dedicado opt-in).
         city: true,
         state: true,
       },
@@ -93,8 +94,6 @@ export async function GET(
           primaryColor: company.primaryColor,
           headline: company.catalogHeadline,
           whatsapp: company.whatsappContact,
-          phone: company.phone,
-          email: company.email,
           location: [company.city, company.state].filter(Boolean).join(" - "),
         },
         categories,

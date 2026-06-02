@@ -102,6 +102,35 @@ export async function POST(
       data.description ||
       `Venda de equipamento: ${equipment.name} (código ${equipment.code}${equipment.serialNumber ? `, série ${equipment.serialNumber}` : ""}).`
 
+    // Idempotência: bloqueia clique-duplo gerando 2 NFs de venda do mesmo
+    // equipamento. Procura por uma invoice NFE_55+VENDA recente (5min) e ainda
+    // ativa pra esse equipamento. Como Invoice não tem `equipmentId` direto,
+    // procuramos pela combinação issuedBy + description + amount no mesmo
+    // intervalo curto.
+    const recentDuplicate = await prisma.invoice.findFirst({
+      where: {
+        companyId: user.companyId,
+        type: "NFE_55",
+        purpose: "VENDA",
+        amount: data.amount,
+        description,
+        status: { in: ["PENDING", "PROCESSING", "ISSUED"] },
+        createdAt: { gte: new Date(Date.now() - 5 * 60 * 1000) },
+      },
+      select: { id: true, status: true },
+    })
+    if (recentDuplicate) {
+      return NextResponse.json(
+        {
+          error:
+            "Já existe NF-e de venda emitida nos últimos 5 minutos pra este equipamento. Aguarde o status atualizar.",
+          existingInvoiceId: recentDuplicate.id,
+          status: recentDuplicate.status,
+        },
+        { status: 409 }
+      )
+    }
+
     const invoice = await prisma.invoice.create({
       data: {
         companyId: user.companyId,
