@@ -398,7 +398,7 @@ function ManutencoesConteudo() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.concluidas}</p>
-                <p className="text-xs text-muted-foreground">Concluidas</p>
+                <p className="text-xs text-muted-foreground">Concluídas</p>
               </div>
             </div>
           </CardContent>
@@ -410,7 +410,7 @@ function ManutencoesConteudo() {
                 <DollarSign className="h-5 w-5 text-yellow-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{formatCurrency(stats.custoTotal)}</p>
+                <p className="text-xl font-bold sm:text-2xl">{formatCurrency(stats.custoTotal)}</p>
                 <p className="text-xs text-muted-foreground">Custo Total</p>
               </div>
             </div>

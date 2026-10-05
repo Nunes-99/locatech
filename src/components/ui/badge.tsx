@@ -24,12 +24,14 @@ const badgeVariants = cva(
 )
 
 export interface BadgeProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends React.HTMLAttributes<HTMLSpanElement>,
     VariantProps<typeof badgeVariants> {}
 
 function Badge({ className, variant, ...props }: BadgeProps) {
   return (
-    <div className={cn(badgeVariants({ variant }), className)} {...props} />
+    // <span>: o Badge aparece dentro de <p> (extrato, locações) e <div> ali
+    // é HTML inválido que quebra a hidratação do React
+    <span className={cn(badgeVariants({ variant }), className)} {...props} />
   )
 }
 

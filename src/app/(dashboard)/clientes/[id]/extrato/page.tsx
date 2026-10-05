@@ -239,7 +239,8 @@ export default function ExtratoClientePage() {
               <CardTitle className="flex items-center gap-2">
                 <User className="h-5 w-5 text-primary" /> {customer.name}
               </CardTitle>
-              <CardDescription className="mt-1 space-y-1">
+              {/* div, não CardDescription (<p>): tem blocos dentro e <div> em <p> quebra a hidratação */}
+              <div className="mt-1 space-y-1 text-sm text-muted-foreground">
                 <div>
                   {customer.documentType}: <span className="font-mono">{customer.document}</span>
                 </div>
@@ -253,7 +254,7 @@ export default function ExtratoClientePage() {
                     </span>
                   )}
                 </div>
-              </CardDescription>
+              </div>
             </div>
             <div className="flex flex-col items-end gap-2">
               <Badge variant="outline">{customer.creditScore}</Badge>

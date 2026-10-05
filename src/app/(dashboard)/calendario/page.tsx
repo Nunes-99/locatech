@@ -372,9 +372,9 @@ export default function CalendarioPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-4">
-        {/* Calendario */}
-        <Card className="lg:col-span-3">
-          <CardContent className="p-4">
+        {/* Calendario — rola por dentro no celular em vez de alargar a página */}
+        <Card className="min-w-0 lg:col-span-3">
+          <CardContent className="overflow-x-auto p-4">
             <style jsx global>{`
               .rbc-calendar {
                 font-family: inherit;
@@ -415,7 +415,7 @@ export default function CalendarioPage() {
               events={events}
               startAccessor={(event: any) => event.start}
               endAccessor={(event: any) => event.end}
-              style={{ height: 600 }}
+              style={{ height: 600, minWidth: 640 }}
               views={[Views.MONTH, Views.WEEK, Views.DAY, Views.AGENDA]}
               view={view}
               onView={(newView: any) => setView(newView)}
@@ -436,7 +436,7 @@ export default function CalendarioPage() {
         </Card>
 
         {/* Sidebar - Proximos eventos */}
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           {/* Legenda */}
           <Card>
             <CardHeader className="pb-2">
@@ -467,7 +467,7 @@ export default function CalendarioPage() {
           {/* Proximos eventos */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Proximos Eventos</CardTitle>
+              <CardTitle className="text-sm">Próximos Eventos</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {proximosEventos.map((evento) => (

@@ -132,7 +132,7 @@ export default function NotasPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <FileText className="h-7 w-7 text-primary" />
           <div>
@@ -142,7 +142,7 @@ export default function NotasPage() {
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" size="sm">
             <Link href="/notas/dashboard">
               <BarChart3 className="mr-2 h-4 w-4" /> Dashboard

@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { usePathname } from "next/navigation"
 import { Sidebar } from "./Sidebar"
 import { Header } from "./Header"
 import { cn } from "@/lib/utils"
@@ -12,6 +13,12 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const pathname = usePathname()
+
+  // No celular, tocar num item do menu leva à tela e fecha o menu
+  useEffect(() => {
+    setMobileSidebarOpen(false)
+  }, [pathname])
 
   return (
     <div className="min-h-screen bg-background">
@@ -34,7 +41,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       {/* Sidebar - Mobile */}
       <div
         className={cn(
-          "fixed inset-y-0 left-0 z-50 lg:hidden transform transition-transform duration-300",
+          // w-64: sem largura o embrulho tinha 0px e o -translate-x-full não
+          // movia nada — no celular o menu ficava aberto por cima de toda tela
+          "fixed inset-y-0 left-0 z-50 w-64 lg:hidden transform transition-transform duration-300",
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
