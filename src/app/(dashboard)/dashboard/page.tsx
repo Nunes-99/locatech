@@ -38,8 +38,9 @@ type ResumoLocacao = {
 type Dados = {
   equipment: { total: number; available: number; rented: number; maintenance: number }
   rentals: { total: number; active: number; overdue: number }
-  revenue: { month: number; previousMonth: number; variation: number | null }
-  customers: { total: number; withActiveRentals: number; pendingAmount: number | string }
+  // null quando o usuário não tem acesso ao financeiro (operador)
+  revenue: { month: number; previousMonth: number; variation: number | null } | null
+  customers: { total: number; withActiveRentals: number; pendingAmount: number | string | null }
   recentRentals: ResumoLocacao[]
   upcomingMaintenances: {
     id: string
@@ -132,7 +133,7 @@ export default function DashboardPage() {
   }, [carregar])
 
   const alertas = dados ? montarAlertas(dados) : []
-  const variacao = dados?.revenue.variation ?? null
+  const variacao = dados?.revenue?.variation ?? null
 
   return (
     <div className="space-y-6">
@@ -227,6 +228,7 @@ export default function DashboardPage() {
               </Card>
             </Link>
 
+            {dados.revenue && (
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Faturamento (Mês)</CardTitle>
@@ -253,6 +255,7 @@ export default function DashboardPage() {
                 </div>
               </CardContent>
             </Card>
+            )}
           </div>
 
           {/* Content Grid */}
@@ -365,6 +368,7 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
+            {dados.customers.pendingAmount !== null && (
             <Card>
               <CardContent className="flex items-center gap-4 p-6">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-yellow-100">
@@ -376,6 +380,7 @@ export default function DashboardPage() {
                 </div>
               </CardContent>
             </Card>
+            )}
           </div>
         </>
       )}

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireCompanyId } from "@/lib/session"
+import { requirePermission } from "@/lib/session"
 
 export async function GET(request: NextRequest) {
   try {
-    const companyId = await requireCompanyId()
+    const companyId = (await requirePermission("financial.view")).companyId
     const { searchParams } = new URL(request.url)
     const period = searchParams.get("period") || "month" // week, month, year
 
@@ -132,8 +132,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(summary)
   } catch (error) {
     console.error("Error fetching financial data:", error)
-    if (error instanceof Error && error.message === "Nao autorizado") {
-      return NextResponse.json({ error: "Nao autorizado" }, { status: 401 })
+    if (error instanceof Error && error.message === "Não autorizado") {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    }
+    if (error instanceof Error && error.message === "Acesso negado") {
+      return NextResponse.json({ error: "Acesso negado" }, { status: 403 })
     }
     return NextResponse.json(
       { error: "Erro ao buscar dados financeiros" },

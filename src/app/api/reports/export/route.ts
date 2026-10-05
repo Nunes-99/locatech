@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireCompanyId } from "@/lib/session"
+import { requirePermission } from "@/lib/session"
 import { csvRow, sanitizeCsvCell } from "@/lib/csv"
 import ExcelJS from "exceljs"
 
@@ -255,7 +255,7 @@ async function buildFinancialReport(companyId: string): Promise<ReportData> {
 
 export async function GET(request: NextRequest) {
   try {
-    const companyId = await requireCompanyId()
+    const companyId = (await requirePermission("report.export")).companyId
     const { searchParams } = new URL(request.url)
     const type = searchParams.get("type") || "equipment"
     const format = searchParams.get("format") || "csv"
@@ -308,6 +308,9 @@ export async function GET(request: NextRequest) {
     console.error("Error exporting report:", error)
     if (error instanceof Error && error.message === "Não autorizado") {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    }
+    if (error instanceof Error && error.message === "Acesso negado") {
+      return NextResponse.json({ error: "Acesso negado" }, { status: 403 })
     }
     return NextResponse.json(
       { error: "Erro ao exportar relatório" },

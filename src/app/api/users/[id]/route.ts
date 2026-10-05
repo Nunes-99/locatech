@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireCompanyId, getSession } from "@/lib/session"
+import { requireCompanyId, getSession, requirePermission } from "@/lib/session"
 import { Role } from "@/lib/permissions"
 import { z } from "zod"
 
@@ -47,7 +47,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const companyId = await requireCompanyId()
+    const companyId = (await requirePermission("user.view")).companyId
 
     const user = await prisma.user.findFirst({
       where: {
@@ -74,6 +74,9 @@ export async function GET(
     console.error("Error fetching user:", error)
     if (error instanceof Error && error.message === "Não autorizado") {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    }
+    if (error instanceof Error && error.message === "Acesso negado") {
+      return NextResponse.json({ error: "Acesso negado" }, { status: 403 })
     }
     return NextResponse.json(
       { error: "Erro ao buscar usuário" },

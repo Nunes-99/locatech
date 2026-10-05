@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireCompanyId } from "@/lib/session"
+import { requireCompanyId, requirePermission } from "@/lib/session"
 import { z } from "zod"
 
 const createCategorySchema = z.object({
@@ -38,7 +38,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const companyId = await requireCompanyId()
+    const companyId = (await requirePermission("category.manage")).companyId
     const body = await request.json()
     const data = createCategorySchema.parse(body)
 
@@ -73,6 +73,9 @@ export async function POST(request: NextRequest) {
     }
     if (error instanceof Error && error.message === "Não autorizado") {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    }
+    if (error instanceof Error && error.message === "Acesso negado") {
+      return NextResponse.json({ error: "Acesso negado" }, { status: 403 })
     }
     console.error("Error creating category:", error)
     return NextResponse.json(

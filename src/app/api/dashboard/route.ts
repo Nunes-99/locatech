@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireCompanyId } from "@/lib/session"
+import { requireAuth } from "@/lib/session"
+import { canPerform, type Role } from "@/lib/permissions"
 import type { RentalStatus } from "@prisma/client"
 
 export async function GET(_request: NextRequest) {
   try {
-    const companyId = await requireCompanyId()
+    const usuario = await requireAuth()
+    const companyId = usuario.companyId
+    // Faturamento e valores a receber só para quem tem acesso ao financeiro
+    // (o operador via aqui o que a tela de financeiro esconde dele)
+    const veFinanceiro = canPerform(usuario.role as Role, "financial.view")
 
     const agora = new Date()
     const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1)
@@ -163,9 +168,9 @@ export async function GET(_request: NextRequest) {
         total: rentalsTotal,
         active: rentalsActive,
         overdue: rentalsOverdue,
-        revenue: revenueTotal,
+        revenue: veFinanceiro ? revenueTotal : null,
       },
-      revenue: {
+      revenue: !veFinanceiro ? null : {
         month: mes,
         previousMonth: mesAnterior,
         // null quando não há base de comparação (mês anterior zerado)
@@ -174,13 +179,13 @@ export async function GET(_request: NextRequest) {
       customers: {
         total: customerStats._count,
         withActiveRentals: clientesAtivos.length,
-        totalSpent: customerStats._sum.totalSpent || 0,
-        pendingAmount: customerStats._sum.totalPending || 0,
+        totalSpent: veFinanceiro ? customerStats._sum.totalSpent || 0 : null,
+        pendingAmount: veFinanceiro ? customerStats._sum.totalPending || 0 : null,
       },
       maintenance: {
         scheduled: maintenanceScheduled,
         inProgress: maintenanceInProgress,
-        totalCost: maintenanceCost,
+        totalCost: veFinanceiro ? maintenanceCost : null,
       },
       recentRentals,
       upcomingMaintenances,

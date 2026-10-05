@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireCompanyId, getSession } from "@/lib/session"
+import { getSession, requirePermission } from "@/lib/session"
 import { mpPreapproval, isMpConfigured } from "@/lib/payments/mercadopago"
 import { PLAN_PRICES } from "@/lib/plan-limits"
 import { rateLimit } from "@/lib/rate-limit"
@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const companyId = await requireCompanyId()
+    const companyId = (await requirePermission("company.update")).companyId
 
     const rl = rateLimit({
       key: `mp-checkout:${companyId}`,
@@ -116,6 +116,9 @@ export async function POST(request: NextRequest) {
     console.error("Error creating MP preapproval:", error)
     if (error instanceof Error && error.message === "Não autorizado") {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    }
+    if (error instanceof Error && error.message === "Acesso negado") {
+      return NextResponse.json({ error: "Acesso negado" }, { status: 403 })
     }
     return NextResponse.json(
       { error: "Erro ao iniciar assinatura no Mercado Pago" },

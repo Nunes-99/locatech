@@ -92,8 +92,8 @@ export async function GET(
     })
   } catch (error) {
     console.error("Error generating contract:", error)
-    if (error instanceof Error && error.message === "Nao autorizado") {
-      return NextResponse.json({ error: "Nao autorizado" }, { status: 401 })
+    if (error instanceof Error && error.message === "Não autorizado") {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
     }
     return NextResponse.json(
       { error: "Erro ao gerar contrato" },

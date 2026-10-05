@@ -21,6 +21,8 @@ import {
   TrendingUp,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/hooks/use-auth"
+import { canPerform, type Permission, type Role } from "@/lib/permissions"
 import { Button } from "@/components/ui/button"
 
 interface SidebarProps {
@@ -28,23 +30,29 @@ interface SidebarProps {
   onToggle: () => void
 }
 
-const menuItems = [
+// Cada item só aparece para quem tem a permissão (antes o operador via Lucro,
+// Usuários e Auditoria no menu — e abria as telas)
+const menuItems: { href: string; label: string; icon: typeof LayoutDashboard; perm?: Permission }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/equipamentos", label: "Equipamentos", icon: Package },
-  { href: "/clientes", label: "Clientes", icon: Users },
-  { href: "/locacoes", label: "Locações", icon: ClipboardList },
-  { href: "/calendario", label: "Calendário", icon: Calendar },
-  { href: "/manutencoes", label: "Manutenções", icon: Wrench },
-  { href: "/lucro", label: "Lucro", icon: TrendingUp },
-  { href: "/relatorios", label: "Relatórios", icon: BarChart3 },
-  { href: "/usuarios", label: "Usuários", icon: UserCog },
-  { href: "/lojas", label: "Lojas", icon: Building2 },
+  { href: "/equipamentos", label: "Equipamentos", icon: Package, perm: "equipment.view" },
+  { href: "/clientes", label: "Clientes", icon: Users, perm: "customer.view" },
+  { href: "/locacoes", label: "Locações", icon: ClipboardList, perm: "rental.view" },
+  { href: "/calendario", label: "Calendário", icon: Calendar, perm: "rental.view" },
+  { href: "/manutencoes", label: "Manutenções", icon: Wrench, perm: "maintenance.view" },
+  { href: "/lucro", label: "Lucro", icon: TrendingUp, perm: "financial.view" },
+  { href: "/relatorios", label: "Relatórios", icon: BarChart3, perm: "report.view" },
+  { href: "/usuarios", label: "Usuários", icon: UserCog, perm: "user.view" },
+  { href: "/lojas", label: "Lojas", icon: Building2, perm: "company.update" },
   { href: "/seguranca", label: "Segurança", icon: ShieldCheck },
-  { href: "/auditoria", label: "Auditoria", icon: ShieldCheck },
-  { href: "/configuracoes", label: "Configurações", icon: Settings },
+  { href: "/auditoria", label: "Auditoria", icon: ShieldCheck, perm: "audit.view" },
+  { href: "/configuracoes", label: "Configurações", icon: Settings, perm: "company.update" },
 ]
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+  const { user } = useAuth()
+  const itensVisiveis = menuItems.filter(
+    (item) => !item.perm || (user ? canPerform(user.role as Role, item.perm) : false)
+  )
   const pathname = usePathname()
 
   return (
@@ -72,7 +80,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto p-4">
         <ul className="space-y-1">
-          {menuItems.map((item) => {
+          {itensVisiveis.map((item) => {
             const isActive =
               pathname === item.href ||
               (item.href !== "/dashboard" && pathname.startsWith(item.href))

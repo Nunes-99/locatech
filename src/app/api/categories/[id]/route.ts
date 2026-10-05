@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireCompanyId } from "@/lib/session"
+import { requireCompanyId, requirePermission } from "@/lib/session"
 import { z } from "zod"
 
 const updateCategorySchema = z.object({
@@ -52,7 +52,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const companyId = await requireCompanyId()
+    const companyId = (await requirePermission("category.manage")).companyId
     const { id } = await params
     const body = await request.json()
     const data = updateCategorySchema.parse(body)
@@ -102,6 +102,9 @@ export async function PUT(
     if (error instanceof Error && error.message === "Não autorizado") {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
     }
+    if (error instanceof Error && error.message === "Acesso negado") {
+      return NextResponse.json({ error: "Acesso negado" }, { status: 403 })
+    }
     console.error("Error updating category:", error)
     return NextResponse.json(
       { error: "Erro ao atualizar categoria" },
@@ -115,7 +118,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const companyId = await requireCompanyId()
+    const companyId = (await requirePermission("category.manage")).companyId
     const { id } = await params
 
     const existing = await prisma.equipmentCategory.findFirst({
@@ -149,6 +152,9 @@ export async function DELETE(
   } catch (error) {
     if (error instanceof Error && error.message === "Não autorizado") {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    }
+    if (error instanceof Error && error.message === "Acesso negado") {
+      return NextResponse.json({ error: "Acesso negado" }, { status: 403 })
     }
     console.error("Error deleting category:", error)
     return NextResponse.json(

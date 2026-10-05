@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireCompanyId, getSession } from "@/lib/session"
+import { requireCompanyId, getSession, requirePermission } from "@/lib/session"
 import { canAddUser, getUpgradeMessage } from "@/lib/plan-limits"
 import { Role } from "@/lib/permissions"
 import { z } from "zod"
@@ -16,7 +16,7 @@ const createUserSchema = z.object({
 
 export async function GET() {
   try {
-    const companyId = await requireCompanyId()
+    const companyId = (await requirePermission("user.view")).companyId
 
     const users = await prisma.user.findMany({
       where: { companyId },
@@ -37,6 +37,9 @@ export async function GET() {
     console.error("Error fetching users:", error)
     if (error instanceof Error && error.message === "Não autorizado") {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    }
+    if (error instanceof Error && error.message === "Acesso negado") {
+      return NextResponse.json({ error: "Acesso negado" }, { status: 403 })
     }
     return NextResponse.json(
       { error: "Erro ao buscar usuários" },
