@@ -4,13 +4,15 @@ import { requireCompanyId, requirePermission } from "@/lib/session"
 import { sendTemplated, getRentalReturnedEmail } from "@/lib/notifications/email"
 import { dispatchWebhooks } from "@/lib/webhooks"
 import { z } from "zod"
+import { diasDeAtraso } from "@/lib/diarias"
 
 const returnSchema = z.object({
   returnNotes: z.string().optional(),
   damageDescription: z.string().optional(),
-  damageCost: z.number().optional(),
-  additionalDays: z.number().optional(),
-  additionalCost: z.number().optional(),
+  // Nada negativo: dano de -500 virava desconto e fechava a locação com total negativo
+  damageCost: z.number().min(0).optional(),
+  additionalDays: z.number().int().min(0).optional(),
+  additionalCost: z.number().min(0).optional(),
 })
 
 export async function POST(
@@ -54,12 +56,13 @@ export async function POST(
     // mas se o cliente devolveu antes do cron rodar OU se a janela de atraso
     // foi curta (poucas horas), a multa saía como 0. Agora calculamos no
     // momento da devolução pra garantir cobrança correta.
-    const expectedEnd = new Date(rental.expectedEndDate)
-    let lateDays = 0
+    // Atraso em DIAS DE CALENDÁRIO (horário de Brasília) contra a data prevista.
+    // A data vem do formulário como "AAAA-MM-DD" e é gravada à meia-noite UTC —
+    // 21h do dia anterior aqui. Comparar instantes cobrava 1 dia de multa de quem
+    // devolvia NO dia combinado; e 3 dias e uns minutos viravam 4.
+    const lateDays = diasDeAtraso(new Date(rental.expectedEndDate), now)
     let lateFee = 0
-    if (now > expectedEnd) {
-      const msPerDay = 24 * 60 * 60 * 1000
-      lateDays = Math.ceil((now.getTime() - expectedEnd.getTime()) / msPerDay)
+    if (lateDays > 0) {
       const lateFeePercent = Number(rental.company.lateFeePercent) // % ao dia
       const dailyFee = (Number(rental.total) * lateFeePercent) / 100
       lateFee = dailyFee * lateDays

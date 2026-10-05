@@ -298,17 +298,18 @@ function LocacoesPageConteudo() {
     })
   }
 
-  function updateItemDays(equipmentId: string, days: number) {
-    setFormData({
-      ...formData,
-      items: formData.items.map((i) =>
-        i.equipmentId === equipmentId ? { ...i, days } : i
-      ),
-    })
+  // Diárias saem das datas (como no servidor): antes cada item tinha um campo
+  // "dias" que começava em 1 e, esquecido, cobrava 1 diária por 30 dias de aluguel
+  function diariasDoPeriodo(): number | null {
+    if (!formData.startDate || !formData.expectedEndDate) return null
+    const ms = new Date(formData.expectedEndDate).getTime() - new Date(formData.startDate).getTime()
+    if (!(ms > 0)) return null
+    return Math.max(1, Math.ceil(ms / 86_400_000))
   }
 
   function calculateSubtotal(): number {
-    return formData.items.reduce((sum, item) => sum + item.dailyRate * item.days, 0)
+    const diarias = diariasDoPeriodo() ?? 0
+    return formData.items.reduce((sum, item) => sum + item.dailyRate * diarias, 0)
   }
 
   async function handleCreateRental(e: React.FormEvent) {
@@ -317,17 +318,25 @@ function LocacoesPageConteudo() {
       toast.error("Adicione pelo menos um equipamento")
       return
     }
+    const diarias = diariasDoPeriodo()
+    if (diarias === null) {
+      toast.error("A data fim precisa ser depois da data de início")
+      return
+    }
 
     setSubmitting(true)
     try {
       const response = await fetch("/api/rentals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          items: formData.items.map((i) => ({ ...i, days: diarias })),
+        }),
       })
 
       if (response.ok) {
-        toast.success("Locacao criada com sucesso!")
+        toast.success("Locação criada com sucesso!")
         setIsCreateDialogOpen(false)
         resetForm()
         fetchData()
@@ -786,11 +795,19 @@ function LocacoesPageConteudo() {
                     id="expectedEndDate"
                     type="date"
                     value={formData.expectedEndDate}
+                    min={formData.startDate || undefined}
                     onChange={(e) => setFormData({ ...formData, expectedEndDate: e.target.value })}
                     required
                   />
                 </div>
               </div>
+              {formData.startDate && formData.expectedEndDate && (
+                <p className={diariasDoPeriodo() === null ? "text-sm text-red-600" : "text-sm text-muted-foreground"}>
+                  {diariasDoPeriodo() === null
+                    ? "A data fim precisa ser depois da data de início."
+                    : `${diariasDoPeriodo()} ${diariasDoPeriodo() === 1 ? "diária" : "diárias"} pelo período escolhido.`}
+                </p>
+              )}
 
               {formData.type === "DELIVERY" && (
                 <div className="space-y-2">
@@ -863,16 +880,8 @@ function LocacoesPageConteudo() {
                                 {eq?.code} - {eq?.name}
                               </TableCell>
                               <TableCell>{formatCurrency(item.dailyRate)}</TableCell>
-                              <TableCell>
-                                <Input
-                                  type="number"
-                                  min="1"
-                                  value={item.days}
-                                  onChange={(e) => updateItemDays(item.equipmentId, parseInt(e.target.value) || 1)}
-                                  className="w-20"
-                                />
-                              </TableCell>
-                              <TableCell>{formatCurrency(item.dailyRate * item.days)}</TableCell>
+                              <TableCell>{diariasDoPeriodo() ?? "—"}</TableCell>
+                              <TableCell>{formatCurrency(item.dailyRate * (diariasDoPeriodo() ?? 0))}</TableCell>
                               <TableCell>
                                 <Button
                                   type="button"

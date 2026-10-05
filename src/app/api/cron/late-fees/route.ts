@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { diasDeAtraso } from "@/lib/diarias"
 import { prisma } from "@/lib/prisma"
 import { sendEmail, getOverdueNotificationEmail, getRentalReminderEmail } from "@/lib/notifications/email"
 
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
       where: {
         deletedAt: null,
         status: { in: ["IN_PROGRESS", "OVERDUE"] },
-        expectedEndDate: { lt: today },
+        expectedEndDate: { lt: now },
         actualEndDate: null,
       },
       include: {
@@ -34,9 +35,11 @@ export async function GET(request: NextRequest) {
     const notifications = []
 
     for (const rental of overdueRentals) {
-      const endDate = new Date(rental.expectedEndDate)
-      const diffTime = today.getTime() - endDate.getTime()
-      const lateDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+      // Mesma contagem da devolução: dias de calendário em Brasília. Pela
+      // meia-noite do servidor (UTC) a locação virava "atrasada" às 21h do
+      // próprio dia combinado.
+      const lateDays = diasDeAtraso(new Date(rental.expectedEndDate), now)
+      if (lateDays <= 0) continue
 
       // Calculate late fee (% per day based on company settings)
       const lateFeePercent = Number(rental.company.lateFeePercent)

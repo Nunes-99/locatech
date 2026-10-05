@@ -173,10 +173,25 @@ export async function PUT(
         },
       })
 
+      // Orçamento confirmado: agora sim o equipamento sai do estoque. Se outro
+      // cliente já está com ele, a confirmação é recusada (tx desfaz tudo).
+      if (existing.status === "QUOTE" && data.status === "CONFIRMED") {
+        for (const item of existing.items) {
+          const pego = await tx.equipment.updateMany({
+            where: { id: item.equipmentId, companyId, status: "AVAILABLE" },
+            data: { status: "RENTED", totalRentals: { increment: 1 } },
+          })
+          if (pego.count !== 1) {
+            throw new Error(`EQUIPAMENTO_OCUPADO:${item.equipmentCode}`)
+          }
+        }
+      }
+
       // Se cancelado, liberar equipamentos — só desocupa os que estavam em RENTED
       // dessa locação (updateMany com guarda evita pisar em equipamento que já
-      // foi para MAINTENANCE/DAMAGED por outro fluxo).
-      if (data.status === "CANCELLED" && existing.status !== "CANCELLED") {
+      // foi para MAINTENANCE/DAMAGED por outro fluxo). Orçamento nunca prendeu
+      // o equipamento: cancelar um não pode liberar o que está com outro cliente.
+      if (data.status === "CANCELLED" && existing.status !== "CANCELLED" && existing.status !== "QUOTE") {
         for (const item of existing.items) {
           await tx.equipment.updateMany({
             where: {
@@ -208,6 +223,12 @@ export async function PUT(
       )
     }
     if (error instanceof Error) {
+      if (error.message.startsWith("EQUIPAMENTO_OCUPADO:")) {
+        return NextResponse.json(
+          { error: `O equipamento ${error.message.split(":")[1]} já está alugado. Libere-o antes de confirmar o orçamento.` },
+          { status: 409 }
+        )
+      }
       if (error.message === "Não autorizado") {
         return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
       }

@@ -4,6 +4,7 @@ import { requireCompanyId, requirePermission } from "@/lib/session"
 import { dispatchWebhooks } from "@/lib/webhooks"
 import { Prisma, RentalStatus, RentalType } from "@prisma/client"
 import { z } from "zod"
+import { contarDiarias } from "@/lib/diarias"
 
 function authErrorResponse(error: Error): NextResponse | null {
   const status = (error as Error & { status?: number }).status
@@ -103,7 +104,9 @@ async function createRentalTx(tx: Prisma.TransactionClient, args: CreateRentalTx
 
   // Aloca cada equipamento condicionalmente — impede race onde 2 locações
   // simultâneas pegam o mesmo item. updateMany retorna count: só vale se = 1.
-  for (const item of args.rentalItems) {
+  // Orçamento NÃO prende o equipamento: só ao ser confirmado (PUT). Antes ele
+  // ficava RENTED e, se o orçamento expirasse, preso para sempre.
+  for (const item of args.status === "QUOTE" ? [] : args.rentalItems) {
     const claimed = await tx.equipment.updateMany({
       where: {
         id: item.equipmentId,
@@ -204,6 +207,19 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = createRentalSchema.parse(body)
 
+    const inicio = new Date(data.startDate)
+    const fim = new Date(data.expectedEndDate)
+    if (Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime())) {
+      return NextResponse.json({ error: "Datas inválidas" }, { status: 400 })
+    }
+    if (fim <= inicio) {
+      return NextResponse.json(
+        { error: "A devolução prevista precisa ser depois da retirada" },
+        { status: 400 }
+      )
+    }
+    const diarias = contarDiarias(inicio, fim)
+
     const customer = await prisma.customer.findFirst({
       where: { id: data.customerId, companyId },
       select: { id: true },
@@ -230,14 +246,14 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      if (equipment.status !== "AVAILABLE") {
+      if (!data.asQuote && equipment.status !== "AVAILABLE") {
         return NextResponse.json(
           { error: `Equipamento ${equipment.code} não está disponível` },
           { status: 409 }
         )
       }
 
-      const itemSubtotal = item.dailyRate * item.days
+      const itemSubtotal = item.dailyRate * diarias
 
       rentalItems.push({
         equipmentId: item.equipmentId,
@@ -245,7 +261,7 @@ export async function POST(request: NextRequest) {
         equipmentName: equipment.name,
         dailyRate: item.dailyRate,
         quantity: 1,
-        days: item.days,
+        days: diarias,
         subtotal: itemSubtotal,
       })
 
@@ -268,8 +284,8 @@ export async function POST(request: NextRequest) {
     const txArgs: CreateRentalTxArgs = {
       companyId,
       customerId: data.customerId,
-      startDate: new Date(data.startDate),
-      expectedEndDate: new Date(data.expectedEndDate),
+      startDate: inicio,
+      expectedEndDate: fim,
       type: data.type,
       deliveryAddress: data.deliveryAddress,
       subtotal,
