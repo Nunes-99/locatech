@@ -175,10 +175,6 @@ export function NotificationDropdown() {
           </div>
         )}
 
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="justify-center text-primary">
-          Ver todas as notificações
-        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )

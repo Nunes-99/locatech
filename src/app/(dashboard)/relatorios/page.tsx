@@ -323,7 +323,7 @@ export default function RelatoriosPage() {
                       </div>
                       <div>
                         <p className="text-2xl font-bold">{overview.kpis.locacoesAtivas}</p>
-                        <p className="text-xs text-muted-foreground">Locacoes Ativas</p>
+                        <p className="text-xs text-muted-foreground">Locações Ativas</p>
                       </div>
                     </div>
                   </CardContent>
@@ -336,7 +336,7 @@ export default function RelatoriosPage() {
                       </div>
                       <div>
                         <p className="text-2xl font-bold">{overview.kpis.manutencoesAtivas}</p>
-                        <p className="text-xs text-muted-foreground">Em Manutencao</p>
+                        <p className="text-xs text-muted-foreground">Em Manutenção</p>
                       </div>
                     </div>
                   </CardContent>
@@ -359,7 +359,7 @@ export default function RelatoriosPage() {
                         <span className="text-xl font-bold">{formatCurrency(overview.kpis.receitaTotal)}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Receita do Mes</span>
+                        <span className="text-muted-foreground">Receita do Mês</span>
                         <span className="text-xl font-bold text-green-600">{formatCurrency(overview.kpis.receitaMes)}</span>
                       </div>
                       <div className="flex items-center justify-between">
@@ -380,7 +380,7 @@ export default function RelatoriosPage() {
                   <CardContent>
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Locacoes Atrasadas</span>
+                        <span className="text-muted-foreground">Locações Atrasadas</span>
                         <span className={`text-xl font-bold ${overview.alerts.overdueRentals > 0 ? "text-red-600" : ""}`}>
                           {overview.alerts.overdueRentals}
                         </span>
@@ -392,7 +392,7 @@ export default function RelatoriosPage() {
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Manutencoes Agendadas</span>
+                        <span className="text-muted-foreground">Manutenções Agendadas</span>
                         <span className="text-xl font-bold">{overview.alerts.maintenancesPending}</span>
                       </div>
                     </div>
@@ -584,7 +584,7 @@ export default function RelatoriosPage() {
               <div className="grid gap-4 md:grid-cols-4">
                 <Card>
                   <CardContent className="p-4">
-                    <p className="text-sm text-muted-foreground">Total de Locacoes</p>
+                    <p className="text-sm text-muted-foreground">Total de Locações</p>
                     <p className="text-2xl font-bold">{rentalsReport.total}</p>
                   </CardContent>
                 </Card>
@@ -596,7 +596,7 @@ export default function RelatoriosPage() {
                 </Card>
                 <Card>
                   <CardContent className="p-4">
-                    <p className="text-sm text-muted-foreground">Receita do Mes</p>
+                    <p className="text-sm text-muted-foreground">Receita do Mês</p>
                     <p className="text-2xl font-bold text-green-600">{formatCurrency(rentalsReport.receitaMesAtual)}</p>
                   </CardContent>
                 </Card>
@@ -612,7 +612,7 @@ export default function RelatoriosPage() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Locacoes por Mes (Ultimos 12 meses)</CardTitle>
+                  <CardTitle className="text-base">Locações por Mês (Últimos 12 meses)</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="h-80">
@@ -641,7 +641,7 @@ export default function RelatoriosPage() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Ultimas Locacoes</CardTitle>
+                  <CardTitle className="text-base">Últimas Locações</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <Table>

@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { Suspense, useState, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   Plus,
   Search,
@@ -54,6 +55,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { toast } from "sonner"
+import { useAuth } from "@/hooks/use-auth"
+import { canPerform, type Role } from "@/lib/permissions"
 
 interface Equipment {
   id: string
@@ -120,6 +123,16 @@ function getStatusBadge(status: string) {
 }
 
 export default function ManutencoesPage() {
+  return (
+    <Suspense>
+      <ManutencoesConteudo />
+    </Suspense>
+  )
+}
+
+function ManutencoesConteudo() {
+  const { user } = useAuth()
+  const podeGerenciar = !!user && canPerform(user.role as Role, "maintenance.manage")
   const [maintenances, setMaintenances] = useState<Maintenance[]>([])
   const [equipment, setEquipment] = useState<Equipment[]>([])
   const [loading, setLoading] = useState(true)
@@ -134,6 +147,17 @@ export default function ManutencoesPage() {
   const [submitting, setSubmitting] = useState(false)
 
   // Form state
+  // Atalho "Manutenção" do menu do equipamento: ?nova=1&equipamento=<id>
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  useEffect(() => {
+    if (searchParams.get("nova") !== "1") return
+    const equipamento = searchParams.get("equipamento")
+    if (equipamento) setFormData((f) => ({ ...f, equipmentId: equipamento }))
+    setIsCreateDialogOpen(true)
+    router.replace("/manutencoes")
+  }, [searchParams, router])
+
   const [formData, setFormData] = useState({
     equipmentId: "",
     type: "PREVENTIVE" as "PREVENTIVE" | "CORRECTIVE" | "INSPECTION",
@@ -233,16 +257,16 @@ export default function ManutencoesPage() {
       })
 
       if (response.ok) {
-        toast.success("Manutencao criada com sucesso!")
+        toast.success("Manutenção criada com sucesso!")
         setIsCreateDialogOpen(false)
         resetForm()
         fetchData()
       } else {
         const error = await response.json()
-        toast.error(error.error || "Erro ao criar manutencao")
+        toast.error(error.error || "Erro ao criar manutenção")
       }
     } catch (error) {
-      toast.error("Erro ao criar manutencao")
+      toast.error("Erro ao criar manutenção")
     } finally {
       setSubmitting(false)
     }
@@ -261,16 +285,16 @@ export default function ManutencoesPage() {
       })
 
       if (response.ok) {
-        toast.success("Manutencao atualizada!")
+        toast.success("Manutenção atualizada!")
         setIsEditDialogOpen(false)
         resetForm()
         fetchData()
       } else {
         const error = await response.json()
-        toast.error(error.error || "Erro ao atualizar manutencao")
+        toast.error(error.error || "Erro ao atualizar manutenção")
       }
     } catch (error) {
-      toast.error("Erro ao atualizar manutencao")
+      toast.error("Erro ao atualizar manutenção")
     } finally {
       setSubmitting(false)
     }
@@ -305,14 +329,14 @@ export default function ManutencoesPage() {
       })
 
       if (response.ok) {
-        toast.success("Manutencao excluida!")
+        toast.success("Manutenção excluída!")
         fetchData()
       } else {
         const error = await response.json()
-        toast.error(error.error || "Erro ao excluir manutencao")
+        toast.error(error.error || "Erro ao excluir manutenção")
       }
     } catch (error) {
-      toast.error("Erro ao excluir manutencao")
+      toast.error("Erro ao excluir manutenção")
     }
   }
 
@@ -327,13 +351,15 @@ export default function ManutencoesPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Manutencoes</h1>
           <p className="text-muted-foreground">
-            Gerencie as manutencoes dos equipamentos
+            Gerencie as manutenções dos equipamentos
           </p>
         </div>
-        <Button onClick={() => setIsCreateDialogOpen(true)} className="flex items-center gap-2">
-          <Plus className="h-4 w-4" />
-          Nova Manutencao
-        </Button>
+        {podeGerenciar && (
+          <Button onClick={() => setIsCreateDialogOpen(true)} className="flex items-center gap-2">
+            <Plus className="h-4 w-4" />
+            Nova Manutenção
+          </Button>
+        )}
       </div>
 
       {/* Stats */}
@@ -399,7 +425,7 @@ export default function ManutencoesPage() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Buscar por equipamento ou descricao..."
+                placeholder="Buscar por equipamento ou descrição..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-10"
@@ -450,7 +476,7 @@ export default function ManutencoesPage() {
               {filteredMaintenances.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="h-24 text-center">
-                    Nenhuma manutencao encontrada
+                    Nenhuma manutenção encontrada
                   </TableCell>
                 </TableRow>
               ) : (
@@ -556,9 +582,9 @@ export default function ManutencoesPage() {
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Nova Manutencao</DialogTitle>
+            <DialogTitle>Nova Manutenção</DialogTitle>
             <DialogDescription>
-              Agende uma nova manutencao para um equipamento
+              Agende uma nova manutenção para um equipamento
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreate}>
@@ -646,7 +672,7 @@ export default function ManutencoesPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="partsCost">Custo Pecas (R$)</Label>
+                  <Label htmlFor="partsCost">Custo Peças (R$)</Label>
                   <Input
                     id="partsCost"
                     type="number"
@@ -669,7 +695,7 @@ export default function ManutencoesPage() {
                   id="notes"
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  placeholder="Observacoes adicionais"
+                  placeholder="Observações adicionais"
                 />
               </div>
             </div>
@@ -679,7 +705,7 @@ export default function ManutencoesPage() {
               </Button>
               <Button type="submit" disabled={submitting || !formData.equipmentId || !formData.title}>
                 {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Criar Manutencao
+                Criar Manutenção
               </Button>
             </DialogFooter>
           </form>
@@ -690,9 +716,9 @@ export default function ManutencoesPage() {
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Editar Manutencao</DialogTitle>
+            <DialogTitle>Editar Manutenção</DialogTitle>
             <DialogDescription>
-              Atualize os dados da manutencao
+              Atualize os dados da manutenção
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleUpdate}>
@@ -768,7 +794,7 @@ export default function ManutencoesPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-partsCost">Custo Pecas (R$)</Label>
+                  <Label htmlFor="edit-partsCost">Custo Peças (R$)</Label>
                   <Input
                     id="edit-partsCost"
                     type="number"

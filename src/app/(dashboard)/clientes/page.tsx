@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useState, useEffect, useCallback } from "react"
 import {
   Plus,
@@ -55,6 +56,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { toast } from "sonner"
+import { useAuth } from "@/hooks/use-auth"
+import { canPerform, type Role } from "@/lib/permissions"
 import { formatCurrency } from "@/lib/utils"
 
 interface Customer {
@@ -91,6 +94,8 @@ function getCreditBadge(score: string) {
 }
 
 export default function ClientesPage() {
+  const { user } = useAuth()
+  const podeExcluir = !!user && canPerform(user.role as Role, "customer.delete")
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useSavedFilters("clientes", {
@@ -468,22 +473,28 @@ export default function ClientesPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
-                            <Eye className="mr-2 h-4 w-4" />
-                            Visualizar
+                          <DropdownMenuItem asChild>
+                            <Link href={`/clientes/${customer.id}/extrato`}>
+                              <Eye className="mr-2 h-4 w-4" />
+                              Ver extrato e locações
+                            </Link>
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleEdit(customer)}>
                             <Edit className="mr-2 h-4 w-4" />
                             Editar
                           </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="text-red-600"
-                            onClick={() => handleDelete(customer.id)}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Remover
-                          </DropdownMenuItem>
+                          {podeExcluir && (
+                            <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-red-600"
+                              onClick={() => handleDelete(customer.id)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Remover
+                            </DropdownMenuItem>
+                            </>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>

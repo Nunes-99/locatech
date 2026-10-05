@@ -125,7 +125,7 @@ export default function FinanceiroPage() {
 
   const periodLabels: Record<string, string> = {
     week: "Esta Semana",
-    month: "Este Mes",
+    month: "Este Mês",
     year: "Este Ano",
   }
 
@@ -145,7 +145,7 @@ export default function FinanceiroPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="week">Esta Semana</SelectItem>
-            <SelectItem value="month">Este Mes</SelectItem>
+            <SelectItem value="month">Este Mês</SelectItem>
             <SelectItem value="year">Este Ano</SelectItem>
           </SelectContent>
         </Select>
@@ -224,7 +224,7 @@ export default function FinanceiroPage() {
               </div>
               <div>
                 <p className="text-xl font-bold">{formatCurrency(data.ticketMedio)}</p>
-                <p className="text-xs text-muted-foreground">Ticket Medio</p>
+                <p className="text-xs text-muted-foreground">Ticket Médio</p>
               </div>
             </div>
           </CardContent>
@@ -252,7 +252,7 @@ export default function FinanceiroPage() {
               </div>
               <div>
                 <p className="text-xl font-bold">{formatCurrency(data.totalManutencoes)}</p>
-                <p className="text-xs text-muted-foreground">Custo Manutencoes</p>
+                <p className="text-xs text-muted-foreground">Custo Manutenções</p>
               </div>
             </div>
           </CardContent>
@@ -266,7 +266,7 @@ export default function FinanceiroPage() {
               </div>
               <div>
                 <p className="text-xl font-bold">{data.locacoesNovas}</p>
-                <p className="text-xs text-muted-foreground">Novas Locacoes</p>
+                <p className="text-xs text-muted-foreground">Novas Locações</p>
               </div>
             </div>
           </CardContent>
@@ -278,7 +278,7 @@ export default function FinanceiroPage() {
         {/* Revenue Chart */}
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">Receitas - Ultimos 7 dias</CardTitle>
+            <CardTitle className="text-base">Receitas - Últimos 7 dias</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-80">
@@ -353,7 +353,7 @@ export default function FinanceiroPage() {
                 </ResponsiveContainer>
               ) : (
                 <div className="flex h-full items-center justify-center">
-                  <p className="text-muted-foreground">Sem dados no periodo</p>
+                  <p className="text-muted-foreground">Sem dados no período</p>
                 </div>
               )}
             </div>
@@ -374,11 +374,11 @@ export default function FinanceiroPage() {
                 <span className="text-xl font-bold">{formatCurrency(data.totalHistorico)}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Locacoes Realizadas</span>
+                <span className="text-muted-foreground">Locações Realizadas</span>
                 <span className="text-xl font-bold">{data.locacoesHistorico}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Ticket Medio Historico</span>
+                <span className="text-muted-foreground">Ticket Médio Histórico</span>
                 <span className="text-xl font-bold">
                   {formatCurrency(data.locacoesHistorico > 0 ? data.totalHistorico / data.locacoesHistorico : 0)}
                 </span>
@@ -389,12 +389,12 @@ export default function FinanceiroPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Resumo do Periodo</CardTitle>
+            <CardTitle className="text-base">Resumo do Período</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Locacoes Ativas</span>
+                <span className="text-muted-foreground">Locações Ativas</span>
                 <span className="text-xl font-bold">{data.locacoesAtivas}</span>
               </div>
               <div className="flex items-center justify-between">

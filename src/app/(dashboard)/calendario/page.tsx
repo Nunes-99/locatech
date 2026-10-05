@@ -96,7 +96,7 @@ const messages = {
   tomorrow: "Amanha",
   today: "Hoje",
   agenda: "Agenda",
-  noEventsInRange: "Nao ha eventos neste periodo",
+  noEventsInRange: "Não há eventos neste período",
   showMore: (total: number) => `+ ${total} mais`,
 }
 
@@ -231,7 +231,7 @@ export default function CalendarioPage() {
 
       // Only allow rescheduling for events that are not yet started
       if (event.rental.status !== "CONFIRMED") {
-        toast.error("Apenas locacoes confirmadas podem ser reagendadas")
+        toast.error("Apenas locações confirmadas podem ser reagendadas")
         return
       }
 
@@ -247,10 +247,10 @@ export default function CalendarioPage() {
           throw new Error(data.error || "Erro ao reagendar")
         }
 
-        toast.success("Locacao reagendada com sucesso!")
+        toast.success("Locação reagendada com sucesso!")
         fetchRentals() // Reload data
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Erro ao reagendar locacao")
+        toast.error(error instanceof Error ? error.message : "Erro ao reagendar locação")
       }
     },
     [fetchRentals]
@@ -576,7 +576,7 @@ export default function CalendarioPage() {
                   className="inline-flex items-center gap-2 text-sm text-blue-600 hover:underline"
                 >
                   <Eye className="h-4 w-4" />
-                  Ver detalhes da locacao
+                  Ver detalhes da locação
                 </a>
               </div>
             </div>

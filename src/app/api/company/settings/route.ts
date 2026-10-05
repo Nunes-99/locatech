@@ -12,7 +12,12 @@ const updateSettingsSchema = z.object({
   city: z.string().optional(),
   state: z.string().optional(),
   zipCode: z.string().optional(),
-  logoUrl: z.string().url().optional().nullable(),
+  // URL completa ou o caminho devolvido pelo /api/upload ("/uploads/...")
+  logoUrl: z
+    .string()
+    .refine((v) => /^https?:\/\//.test(v) || /^\/uploads\/[\w.-]+$/.test(v), "Logo inválido")
+    .optional()
+    .nullable(),
   primaryColor: z.string().optional(),
   lateFeePercent: z.number().min(0).max(100).optional(),
   defaultRentalDays: z.number().int().min(1).optional(),

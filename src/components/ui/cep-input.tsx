@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, forwardRef } from "react"
+import { useState, useEffect, useRef, forwardRef } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Search, Loader2, Check, X } from "lucide-react"
@@ -25,19 +25,23 @@ export const CepInput = forwardRef<HTMLInputElement, CepInputProps>(
       }
     }, [value])
 
+    // Avisa a página uma vez por endereço encontrado. Com o callback nas
+    // dependências, a página (que passa uma função nova a cada render) entrava
+    // em loop infinito ao carregar um CEP salvo — Configurações nem abria.
+    const avisarRef = useRef(onAddressFound)
+    avisarRef.current = onAddressFound
     useEffect(() => {
-      if (address && onAddressFound) {
-        onAddressFound(address)
-      }
-    }, [address, onAddressFound])
+      if (address) avisarRef.current?.(address)
+    }, [address])
 
-    // Auto search when CEP is complete
+    // Auto search when CEP is complete — uma busca por CEP, não por render
+    const ultimoBuscado = useRef("")
     useEffect(() => {
-      if (autoSearch) {
-        const cleanCep = inputValue.replace(/\D/g, "")
-        if (cleanCep.length === 8) {
-          searchCep(cleanCep)
-        }
+      if (!autoSearch) return
+      const cleanCep = inputValue.replace(/\D/g, "")
+      if (cleanCep.length === 8 && cleanCep !== ultimoBuscado.current) {
+        ultimoBuscado.current = cleanCep
+        searchCep(cleanCep)
       }
     }, [inputValue, autoSearch, searchCep])
 

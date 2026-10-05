@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Suspense, useCallback, useEffect, useState } from "react"
 import {
@@ -51,6 +52,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { toast } from "sonner"
+import { useAuth } from "@/hooks/use-auth"
+import { canPerform, type Role } from "@/lib/permissions"
 import { formatCurrency } from "@/lib/utils"
 
 interface Category {
@@ -100,6 +103,9 @@ export default function EquipamentosPage() {
 }
 
 function EquipamentosPageConteudo() {
+  const { user } = useAuth()
+  const podeExcluir = !!user && canPerform(user.role as Role, "equipment.delete")
+  const podeGerenciarManutencao = !!user && canPerform(user.role as Role, "maintenance.manage")
   const [equipment, setEquipment] = useState<Equipment[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
@@ -496,26 +502,36 @@ function EquipamentosPageConteudo() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
-                            <Eye className="mr-2 h-4 w-4" />
-                            Visualizar
+                          <DropdownMenuItem asChild>
+                            <a href={`/api/equipment/${eq.id}/qrcode?format=png`} target="_blank" rel="noreferrer">
+                              <Eye className="mr-2 h-4 w-4" />
+                              Etiqueta QR
+                            </a>
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleEdit(eq)}>
                             <Edit className="mr-2 h-4 w-4" />
                             Editar
                           </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Wrench className="mr-2 h-4 w-4" />
-                            Manutenção
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="text-red-600"
-                            onClick={() => handleDelete(eq.id)}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Desativar
-                          </DropdownMenuItem>
+                          {podeGerenciarManutencao && (
+                            <DropdownMenuItem asChild>
+                              <Link href={`/manutencoes?nova=1&equipamento=${eq.id}`}>
+                                <Wrench className="mr-2 h-4 w-4" />
+                                Manutenção
+                              </Link>
+                            </DropdownMenuItem>
+                          )}
+                          {podeExcluir && (
+                            <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-red-600"
+                              onClick={() => handleDelete(eq.id)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Desativar
+                            </DropdownMenuItem>
+                            </>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>

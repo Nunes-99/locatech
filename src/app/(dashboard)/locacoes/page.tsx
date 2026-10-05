@@ -342,10 +342,10 @@ function LocacoesPageConteudo() {
         fetchData()
       } else {
         const error = await response.json()
-        toast.error(error.error || "Erro ao criar locacao")
+        toast.error(error.error || "Erro ao criar locação")
       }
     } catch (error) {
-      toast.error("Erro ao criar locacao")
+      toast.error("Erro ao criar locação")
     } finally {
       setSubmitting(false)
     }
@@ -404,16 +404,16 @@ function LocacoesPageConteudo() {
       })
 
       if (response.ok) {
-        toast.success("Devolucao registrada com sucesso!")
+        toast.success("Devolução registrada com sucesso!")
         setIsReturnDialogOpen(false)
         setReturnData({ returnNotes: "", damageDescription: "", damageCost: 0, additionalCost: 0 })
         fetchData()
       } else {
         const error = await response.json()
-        toast.error(error.error || "Erro ao registrar devolucao")
+        toast.error(error.error || "Erro ao registrar devolução")
       }
     } catch (error) {
-      toast.error("Erro ao registrar devolucao")
+      toast.error("Erro ao registrar devolução")
     } finally {
       setSubmitting(false)
     }
@@ -455,12 +455,12 @@ function LocacoesPageConteudo() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Locacoes</h1>
           <p className="text-muted-foreground">
-            Gerencie as locacoes de equipamentos
+            Gerencie as locações de equipamentos
           </p>
         </div>
         <Button onClick={() => setIsCreateDialogOpen(true)} className="flex items-center gap-2">
           <Plus className="h-4 w-4" />
-          Nova Locacao
+          Nova Locação
         </Button>
       </div>
 
@@ -581,7 +581,7 @@ function LocacoesPageConteudo() {
               {filteredRentals.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="h-24 text-center">
-                    Nenhuma locacao encontrada
+                    Nenhuma locação encontrada
                   </TableCell>
                 </TableRow>
               ) : (
@@ -651,13 +651,13 @@ function LocacoesPageConteudo() {
                           {rental.status === "QUOTE" && (
                             <DropdownMenuItem onClick={() => handleUpdateStatus(rental, "CONFIRMED")}>
                               <CheckCircle className="mr-2 h-4 w-4" />
-                              Confirmar Locacao
+                              Confirmar Locação
                             </DropdownMenuItem>
                           )}
                           {rental.status === "CONFIRMED" && (
                             <DropdownMenuItem onClick={() => handleUpdateStatus(rental, "IN_PROGRESS")}>
                               <Clock className="mr-2 h-4 w-4" />
-                              Iniciar Locacao
+                              Iniciar Locação
                             </DropdownMenuItem>
                           )}
                           {["IN_PROGRESS", "OVERDUE"].includes(rental.status) && (
@@ -666,13 +666,13 @@ function LocacoesPageConteudo() {
                               setIsReturnDialogOpen(true)
                             }}>
                               <RotateCcw className="mr-2 h-4 w-4" />
-                              Registrar Devolucao
+                              Registrar Devolução
                             </DropdownMenuItem>
                           )}
                           {rental.status === "RETURNED" && (
                             <DropdownMenuItem onClick={() => handleUpdateStatus(rental, "COMPLETED")}>
                               <CheckCircle className="mr-2 h-4 w-4" />
-                              Finalizar Locacao
+                              Finalizar Locação
                             </DropdownMenuItem>
                           )}
                           {rental.paymentStatus !== "PAID" && (
@@ -735,9 +735,9 @@ function LocacoesPageConteudo() {
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Nova Locacao</DialogTitle>
+            <DialogTitle>Nova Locação</DialogTitle>
             <DialogDescription>
-              Preencha os dados para criar uma nova locacao
+              Preencha os dados para criar uma nova locação
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateRental}>
@@ -780,7 +780,7 @@ function LocacoesPageConteudo() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="startDate">Data Inicio *</Label>
+                  <Label htmlFor="startDate">Data Início *</Label>
                   <Input
                     id="startDate"
                     type="date"
@@ -811,18 +811,18 @@ function LocacoesPageConteudo() {
 
               {formData.type === "DELIVERY" && (
                 <div className="space-y-2">
-                  <Label htmlFor="deliveryAddress">Endereco de Entrega</Label>
+                  <Label htmlFor="deliveryAddress">Endereço de Entrega</Label>
                   <Input
                     id="deliveryAddress"
                     value={formData.deliveryAddress}
                     onChange={(e) => setFormData({ ...formData, deliveryAddress: e.target.value })}
-                    placeholder="Endereco completo para entrega"
+                    placeholder="Endereço completo para entrega"
                   />
                 </div>
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="depositAmount">Caucao (R$)</Label>
+                <Label htmlFor="depositAmount">Caução (R$)</Label>
                 <Input
                   id="depositAmount"
                   type="number"
@@ -917,7 +917,7 @@ function LocacoesPageConteudo() {
                   id="notes"
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  placeholder="Observacoes sobre a locacao"
+                  placeholder="Observações sobre a locação"
                 />
               </div>
             </div>
@@ -927,7 +927,7 @@ function LocacoesPageConteudo() {
               </Button>
               <Button type="submit" disabled={submitting || !formData.customerId || formData.items.length === 0}>
                 {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Criar Locacao
+                Criar Locação
               </Button>
             </DialogFooter>
           </form>
@@ -938,7 +938,7 @@ function LocacoesPageConteudo() {
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Detalhes da Locacao</DialogTitle>
+            <DialogTitle>Detalhes da Locação</DialogTitle>
             <DialogDescription>
               {selectedRental && `Contrato LOC-${selectedRental.contractNumber.toString().padStart(4, "0")}`}
             </DialogDescription>
@@ -1049,7 +1049,7 @@ function LocacoesPageConteudo() {
       <Dialog open={isReturnDialogOpen} onOpenChange={setIsReturnDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Registrar Devolucao</DialogTitle>
+            <DialogTitle>Registrar Devolução</DialogTitle>
             <DialogDescription>
               {selectedRental && `Contrato LOC-${selectedRental.contractNumber.toString().padStart(4, "0")}`}
             </DialogDescription>
@@ -1057,17 +1057,17 @@ function LocacoesPageConteudo() {
           <form onSubmit={handleReturn}>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="returnNotes">Observacoes da Devolucao</Label>
+                <Label htmlFor="returnNotes">Observações da Devolução</Label>
                 <Textarea
                   id="returnNotes"
                   value={returnData.returnNotes}
                   onChange={(e) => setReturnData({ ...returnData, returnNotes: e.target.value })}
-                  placeholder="Observacoes sobre a devolucao"
+                  placeholder="Observações sobre a devolução"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="damageDescription">Descricao de Danos</Label>
+                <Label htmlFor="damageDescription">Descrição de Danos</Label>
                 <Textarea
                   id="damageDescription"
                   value={returnData.damageDescription}
@@ -1115,7 +1115,7 @@ function LocacoesPageConteudo() {
               </Button>
               <Button type="submit" disabled={submitting}>
                 {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Confirmar Devolucao
+                Confirmar Devolução
               </Button>
             </DialogFooter>
           </form>

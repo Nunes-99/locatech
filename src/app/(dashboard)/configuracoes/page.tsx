@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import {
   Building2,
   User,
@@ -89,13 +89,38 @@ export default function ConfiguracoesPage() {
     confirmPassword: "",
   })
 
-  const [notifications, setNotifications] = useState({
-    emailLocacao: true,
-    emailDevolucao: true,
-    emailManutencao: true,
-    whatsappCliente: true,
-    whatsappVencimento: true,
-  })
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [enviandoLogo, setEnviandoLogo] = useState(false)
+  const inputLogo = useRef<HTMLInputElement>(null)
+
+  // "Carregar Logo" não fazia nada; o logo aparece nos e-mails e documentos
+  async function enviarLogo(arquivo: File) {
+    if (arquivo.size > 2 * 1024 * 1024) {
+      toast.error("O logo pode ter no máximo 2MB")
+      return
+    }
+    setEnviandoLogo(true)
+    try {
+      const corpo = new FormData()
+      corpo.append("file", arquivo)
+      const up = await fetch("/api/upload", { method: "POST", body: corpo })
+      const dados = await up.json()
+      if (!up.ok) throw new Error(dados.error || "Falha no envio")
+      const salvo = await fetch("/api/company/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logoUrl: dados.url }),
+      })
+      if (!salvo.ok) throw new Error((await salvo.json()).error || "Falha ao salvar")
+      setLogoUrl(dados.url)
+      toast.success("Logo atualizado")
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível enviar o logo")
+    } finally {
+      setEnviandoLogo(false)
+      if (inputLogo.current) inputLogo.current.value = ""
+    }
+  }
 
   useEffect(() => {
     fetchCompanyData()
@@ -118,6 +143,7 @@ export default function ConfiguracoesPage() {
           lateFeePercent: String(data.lateFeePercent || 2),
           defaultRentalDays: String(data.defaultRentalDays || 1),
         })
+        setLogoUrl(data.logoUrl || null)
       }
     } catch (error) {
       console.error("Error fetching company data:", error)
@@ -257,13 +283,34 @@ export default function ConfiguracoesPage() {
             <CardContent>
               <form onSubmit={handleSaveCompany} className="space-y-6">
                 <div className="flex items-center gap-6">
-                  <div className="flex h-24 w-24 items-center justify-center rounded-lg border-2 border-dashed bg-muted">
-                    <Building2 className="h-10 w-10 text-muted-foreground" />
+                  <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-lg border-2 border-dashed bg-muted">
+                    {logoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={logoUrl} alt="Logo da empresa" className="h-full w-full object-contain" />
+                    ) : (
+                      <Building2 className="h-10 w-10 text-muted-foreground" />
+                    )}
                   </div>
                   <div>
-                    <Button type="button" variant="outline" size="sm">
+                    <input
+                      ref={inputLogo}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      onChange={(e) => {
+                        const arquivo = e.target.files?.[0]
+                        if (arquivo) enviarLogo(arquivo)
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      loading={enviandoLogo}
+                      onClick={() => inputLogo.current?.click()}
+                    >
                       <Upload className="mr-2 h-4 w-4" />
-                      Carregar Logo
+                      {logoUrl ? "Trocar logo" : "Carregar Logo"}
                     </Button>
                     <p className="mt-1 text-xs text-muted-foreground">
                       PNG ou JPG, máximo 2MB
@@ -506,100 +553,20 @@ export default function ConfiguracoesPage() {
         <TabsContent value="notificacoes">
           <Card>
             <CardHeader>
-              <CardTitle>Preferências de Notificação</CardTitle>
-              <CardDescription>
-                Configure quais notificações deseja receber
-              </CardDescription>
+              <CardTitle>Notificações</CardTitle>
+              <CardDescription>O que o LocaTech avisa automaticamente</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-4">
-                <h4 className="font-medium">Notificações por E-mail</h4>
-                <div className="space-y-3">
-                  <label className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-gray-300"
-                      checked={notifications.emailLocacao}
-                      onChange={(e) =>
-                        setNotifications({
-                          ...notifications,
-                          emailLocacao: e.target.checked,
-                        })
-                      }
-                    />
-                    <span className="text-sm">Novas locações</span>
-                  </label>
-                  <label className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-gray-300"
-                      checked={notifications.emailDevolucao}
-                      onChange={(e) =>
-                        setNotifications({
-                          ...notifications,
-                          emailDevolucao: e.target.checked,
-                        })
-                      }
-                    />
-                    <span className="text-sm">Devoluções agendadas</span>
-                  </label>
-                  <label className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-gray-300"
-                      checked={notifications.emailManutencao}
-                      onChange={(e) =>
-                        setNotifications({
-                          ...notifications,
-                          emailManutencao: e.target.checked,
-                        })
-                      }
-                    />
-                    <span className="text-sm">Manutenções programadas</span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h4 className="font-medium">Notificações por WhatsApp</h4>
-                <div className="space-y-3">
-                  <label className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-gray-300"
-                      checked={notifications.whatsappCliente}
-                      onChange={(e) =>
-                        setNotifications({
-                          ...notifications,
-                          whatsappCliente: e.target.checked,
-                        })
-                      }
-                    />
-                    <span className="text-sm">Lembrete para clientes</span>
-                  </label>
-                  <label className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-gray-300"
-                      checked={notifications.whatsappVencimento}
-                      onChange={(e) =>
-                        setNotifications({
-                          ...notifications,
-                          whatsappVencimento: e.target.checked,
-                        })
-                      }
-                    />
-                    <span className="text-sm">Alerta de vencimento</span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <Button>
-                  <Save className="mr-2 h-4 w-4" />
-                  Salvar Preferências
-                </Button>
-              </div>
+            <CardContent className="space-y-4 text-sm">
+              {/* Antes havia caixas de marcar (inclusive WhatsApp, que ainda não
+                  existe) que não eram gravadas em lugar nenhum. */}
+              <ul className="list-disc space-y-2 pl-5">
+                <li>Para o cliente, por e-mail: lembrete 1 e 3 dias antes da devolução e aviso de atraso.</li>
+                <li>Para a equipe, no sino do topo: locações atrasadas, orçamentos expirados e manutenções.</li>
+                <li>No celular: ative as notificações do navegador no sino do topo.</li>
+              </ul>
+              <p className="text-muted-foreground">
+                Escolher quais avisos receber e lembretes por WhatsApp ainda não estão disponíveis.
+              </p>
             </CardContent>
           </Card>
         </TabsContent>

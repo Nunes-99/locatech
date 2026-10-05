@@ -209,15 +209,17 @@ function PricingCard({
           </li>
         ))}
       </ul>
-      <button
-        className={`w-full py-2 rounded-lg font-semibold transition-colors ${
+      {/* Era um <button> sem ação: o visitante clicava no plano e nada acontecia */}
+      <Link
+        href="/cadastro"
+        className={`block w-full py-2 text-center rounded-lg font-semibold transition-colors ${
           highlighted
             ? "bg-white text-primary hover:bg-gray-100"
             : "bg-primary text-white hover:bg-primary-600"
         }`}
       >
         {cta}
-      </button>
+      </Link>
     </div>
   )
 }

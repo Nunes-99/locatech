@@ -280,8 +280,13 @@ function shell(
   const safeColor = branding?.headerColor && /^#[0-9a-fA-F]{3,8}$/.test(branding.headerColor)
     ? branding.headerColor
     : defaultHeaderColor
-  const logo = branding?.logoUrl
-    ? `<img src="${safeUrl(branding.logoUrl, "")}" alt="" style="max-height: 56px; max-width: 200px; margin-bottom: 8px; display: inline-block;" />`
+  // Logo enviado pelo app é salvo como "/uploads/..."; no e-mail precisa da URL completa
+  const logoAbsoluto =
+    branding?.logoUrl && branding.logoUrl.startsWith("/")
+      ? `${(process.env.NEXTAUTH_URL || "").replace(/\/$/, "")}${branding.logoUrl}`
+      : branding?.logoUrl
+  const logo = logoAbsoluto
+    ? `<img src="${safeUrl(logoAbsoluto, "")}" alt="" style="max-height: 56px; max-width: 200px; margin-bottom: 8px; display: inline-block;" />`
     : ""
   // title é constante interna — não escapado. inner/footer são montados pelos
   // callers com `esc()` em cada interpolação dinâmica.

@@ -243,7 +243,7 @@ export function RentalContractPDF({ data }: { data: RentalContractData }) {
             </View>
           ) : null}
           <Text style={styles.title}>{data.companyName}</Text>
-          <Text style={styles.subtitle}>Sistema de Locacao de Equipamentos</Text>
+          <Text style={styles.subtitle}>Sistema de Locação de Equipamentos</Text>
           <Text style={styles.contractNumber}>
             CONTRATO DE LOCACAO N. LOC-{data.contractNumber.toString().padStart(4, "0")}
           </Text>
@@ -264,7 +264,7 @@ export function RentalContractPDF({ data }: { data: RentalContractData }) {
           )}
           {data.companyAddress && (
             <View style={styles.row}>
-              <Text style={styles.label}>Endereco:</Text>
+              <Text style={styles.label}>Endereço:</Text>
               <Text style={styles.value}>{data.companyAddress}</Text>
             </View>
           )}
@@ -293,7 +293,7 @@ export function RentalContractPDF({ data }: { data: RentalContractData }) {
           </View>
           {data.customerAddress && (
             <View style={styles.row}>
-              <Text style={styles.label}>Endereco:</Text>
+              <Text style={styles.label}>Endereço:</Text>
               <Text style={styles.value}>{data.customerAddress}</Text>
             </View>
           )}
@@ -303,7 +303,7 @@ export function RentalContractPDF({ data }: { data: RentalContractData }) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>DADOS DA LOCACAO</Text>
           <View style={styles.row}>
-            <Text style={styles.label}>Periodo:</Text>
+            <Text style={styles.label}>Período:</Text>
             <Text style={styles.value}>
               {formatDate(data.startDate)} a {formatDate(data.expectedEndDate)}
             </Text>
@@ -358,7 +358,7 @@ export function RentalContractPDF({ data }: { data: RentalContractData }) {
             )}
             {data.depositAmount > 0 && (
               <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Caucao:</Text>
+                <Text style={styles.totalLabel}>Caução:</Text>
                 <Text style={styles.totalValue}>{formatCurrency(data.depositAmount)}</Text>
               </View>
             )}
@@ -387,13 +387,13 @@ export function RentalContractPDF({ data }: { data: RentalContractData }) {
             2. Quaisquer danos causados aos equipamentos serao de responsabilidade do LOCATARIO, que devera arcar com os custos de reparo ou substituicao.
           </Text>
           <Text style={styles.termsText}>
-            3. A caucao sera devolvida integralmente apos a devolucao dos equipamentos em perfeito estado, descontados eventuais danos ou valores pendentes.
+            3. A caução sera devolvida integralmente apos a devolução dos equipamentos em perfeito estado, descontados eventuais danos ou valores pendentes.
           </Text>
           <Text style={styles.termsText}>
-            4. O atraso na devolucao dos equipamentos acarretara cobranca adicional proporcional ao valor diario de locacao.
+            4. O atraso na devolução dos equipamentos acarretara cobranca adicional proporcional ao valor diario de locação.
           </Text>
           <Text style={styles.termsText}>
-            5. Este contrato entra em vigor na data de sua assinatura e permanece valido ate a devolucao dos equipamentos e quitacao de todos os valores.
+            5. Este contrato entra em vigor na data de sua assinatura e permanece valido ate a devolução dos equipamentos e quitacao de todos os valores.
           </Text>
         </View>
 
