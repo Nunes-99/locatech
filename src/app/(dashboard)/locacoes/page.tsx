@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Suspense, useEffect, useState } from "react"
 import {
   Plus,
   Search,
@@ -155,6 +156,14 @@ function getPaymentBadge(status: string) {
 }
 
 export default function LocacoesPage() {
+  return (
+    <Suspense>
+      <LocacoesPageConteudo />
+    </Suspense>
+  )
+}
+
+function LocacoesPageConteudo() {
   const [rentals, setRentals] = useState<Rental[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [equipment, setEquipment] = useState<Equipment[]>([])
@@ -189,6 +198,16 @@ export default function LocacoesPage() {
     damageCost: 0,
     additionalCost: 0,
   })
+
+  // Atalho "Nova Locação" do dashboard chega com ?nova=1
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  useEffect(() => {
+    if (searchParams.get("nova") === "1") {
+      setIsCreateDialogOpen(true)
+      router.replace("/locacoes")
+    }
+  }, [searchParams, router])
 
   useEffect(() => {
     fetchData()

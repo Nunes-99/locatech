@@ -7,7 +7,9 @@ const ContentSecurityPolicy = [
   // durante a hidratação. Próximo passo: migrar pra nonce-based CSP (precisa
   // de setup adicional no middleware). 'unsafe-eval' foi removido — se alguma
   // lib quebrar em runtime (Recharts em versões antigas, etc), reverter.
-  "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com",
+  // Em desenvolvimento o Next usa eval (source maps/HMR): sem ele o React não
+  // hidrata e o `npm run dev` fica inutilizável (o login nem envia). Só em dev.
+  `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"} https://sdk.mercadopago.com`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",

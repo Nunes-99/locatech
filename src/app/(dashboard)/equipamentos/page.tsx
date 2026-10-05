@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Suspense, useCallback, useEffect, useState } from "react"
 import {
   Plus,
   Search,
@@ -91,6 +92,14 @@ function getStatusBadge(status: string) {
 }
 
 export default function EquipamentosPage() {
+  return (
+    <Suspense>
+      <EquipamentosPageConteudo />
+    </Suspense>
+  )
+}
+
+function EquipamentosPageConteudo() {
   const [equipment, setEquipment] = useState<Equipment[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
@@ -104,6 +113,17 @@ export default function EquipamentosPage() {
   const categoryFilter = filters.categoryFilter
   const statusFilter = filters.statusFilter
   const setSearch = (v: string) => setFilters((p) => ({ ...p, search: v }))
+
+  // Busca do cabeçalho chega como ?busca=; ela manda sobre o filtro salvo
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  useEffect(() => {
+    const busca = searchParams.get("busca")
+    if (busca !== null) {
+      setFilters((p) => ({ ...p, search: busca, categoryFilter: "all", statusFilter: "all" }))
+      router.replace("/equipamentos")
+    }
+  }, [searchParams, router, setFilters])
   const setCategoryFilter = (v: string) => setFilters((p) => ({ ...p, categoryFilter: v }))
   const setStatusFilter = (v: string) => setFilters((p) => ({ ...p, statusFilter: v }))
   const [dialogOpen, setDialogOpen] = useState(false)
